@@ -1,15 +1,25 @@
 const Member = require("../models/Member");
+const mongoose = require("mongoose");
+const createActivityLog = require("../utils/createActivityLog");
 
 // Créer un membre
 const createMember = async (req, res) => {
   try {
     const member = await Member.create(req.body);
 
-    const populatedMember = await Member.findById(member._id).populate("department");
+    await createActivityLog({
+      req,
+      action: "CREATE",
+      entity: "Member",
+      entityId: member._id,
+      description: `Création du membre ${member.firstName || ""} ${
+        member.lastName || ""
+      }`.trim(),
+    });
 
     res.status(201).json({
       success: true,
-      data: populatedMember,
+      data: member,
     });
   } catch (error) {
     res.status(400).json({
@@ -19,10 +29,10 @@ const createMember = async (req, res) => {
   }
 };
 
-// Lire tous les membres avec recherche, filtres et pagination
+// Lire tous les membres avec filtres et pagination
 const getMembers = async (req, res) => {
   try {
-    const { search, status, department } = req.query;
+    const { search, department, status } = req.query;
 
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
@@ -34,17 +44,17 @@ const getMembers = async (req, res) => {
       filter.$or = [
         { firstName: { $regex: search, $options: "i" } },
         { lastName: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
         { phone: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
       ];
-    }
-
-    if (status) {
-      filter.status = status;
     }
 
     if (department) {
       filter.department = department;
+    }
+
+    if (status) {
+      filter.status = status;
     }
 
     const total = await Member.countDocuments(filter);
@@ -75,7 +85,16 @@ const getMembers = async (req, res) => {
 // Lire un membre par ID
 const getMemberById = async (req, res) => {
   try {
-    const member = await Member.findById(req.params.id).populate("department");
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID membre invalide",
+      });
+    }
+
+    const member = await Member.findById(id).populate("department");
 
     if (!member) {
       return res.status(404).json({
@@ -99,7 +118,16 @@ const getMemberById = async (req, res) => {
 // Modifier un membre
 const updateMember = async (req, res) => {
   try {
-    const member = await Member.findByIdAndUpdate(req.params.id, req.body, {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID membre invalide",
+      });
+    }
+
+    const member = await Member.findByIdAndUpdate(id, req.body, {
       new: true,
       runValidators: true,
     }).populate("department");
@@ -111,9 +139,20 @@ const updateMember = async (req, res) => {
       });
     }
 
+    await createActivityLog({
+      req,
+      action: "UPDATE",
+      entity: "Member",
+      entityId: member._id,
+      description: `Modification du membre ${member.firstName || ""} ${
+        member.lastName || ""
+      }`.trim(),
+    });
+
     res.status(200).json({
       success: true,
       data: member,
+      message: "Membre mis à jour avec succès",
     });
   } catch (error) {
     res.status(400).json({
@@ -126,7 +165,16 @@ const updateMember = async (req, res) => {
 // Supprimer un membre
 const deleteMember = async (req, res) => {
   try {
-    const member = await Member.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID membre invalide",
+      });
+    }
+
+    const member = await Member.findByIdAndDelete(id);
 
     if (!member) {
       return res.status(404).json({
@@ -134,6 +182,16 @@ const deleteMember = async (req, res) => {
         message: "Membre introuvable",
       });
     }
+
+    await createActivityLog({
+      req,
+      action: "DELETE",
+      entity: "Member",
+      entityId: id,
+      description: `Suppression du membre ${member.firstName || ""} ${
+        member.lastName || ""
+      }`.trim(),
+    });
 
     res.status(200).json({
       success: true,

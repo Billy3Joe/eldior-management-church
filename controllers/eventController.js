@@ -1,5 +1,6 @@
 const Event = require("../models/Event");
 
+// Créer un événement
 const createEvent = async (req, res) => {
   try {
     const event = await Event.create(req.body);
@@ -16,12 +17,55 @@ const createEvent = async (req, res) => {
   }
 };
 
+// Lire tous les événements avec recherche, filtres et pagination
 const getEvents = async (req, res) => {
   try {
-    const events = await Event.find().sort({ date: 1 });
+    const { search, status, type, leader, location } = req.query;
+
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+        { leader: { $regex: search, $options: "i" } },
+        { location: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (status) {
+      filter.status = status;
+    }
+
+    if (type) {
+      filter.type = type;
+    }
+
+    if (leader) {
+      filter.leader = { $regex: leader, $options: "i" };
+    }
+
+    if (location) {
+      filter.location = { $regex: location, $options: "i" };
+    }
+
+    const total = await Event.countDocuments(filter);
+
+    const events = await Event.find(filter)
+      .sort({ date: 1 })
+      .skip(skip)
+      .limit(limit);
 
     res.status(200).json({
       success: true,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
       count: events.length,
       data: events,
     });
@@ -33,6 +77,7 @@ const getEvents = async (req, res) => {
   }
 };
 
+// Lire un événement par ID
 const getEventById = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
@@ -56,6 +101,7 @@ const getEventById = async (req, res) => {
   }
 };
 
+// Modifier un événement
 const updateEvent = async (req, res) => {
   try {
     const event = await Event.findByIdAndUpdate(req.params.id, req.body, {
@@ -82,6 +128,7 @@ const updateEvent = async (req, res) => {
   }
 };
 
+// Supprimer un événement
 const deleteEvent = async (req, res) => {
   try {
     const event = await Event.findByIdAndDelete(req.params.id);

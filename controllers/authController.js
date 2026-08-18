@@ -1,36 +1,51 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const Admin = require("../models/Admin");
+const User = require("../models/User");
 
-const registerAdmin = async (req, res) => {
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: "30d",
+  });
+};
+
+const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, role } = req.body;
 
-    const adminExists = await Admin.findOne({ email });
-
-    if (adminExists) {
+    if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Cet admin existe déjà",
+        message: "Nom, email et mot de passe sont requis",
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const userExists = await User.findOne({ email });
 
-    const admin = await Admin.create({
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: "Utilisateur déjà existant",
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const user = await User.create({
       name,
       email,
       password: hashedPassword,
+      role: role || "admin",
     });
 
     res.status(201).json({
       success: true,
-      message: "Admin créé avec succès",
+      token: generateToken(user._id),
       data: {
-        id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
@@ -41,49 +56,167 @@ const registerAdmin = async (req, res) => {
   }
 };
 
-const loginAdmin = async (req, res) => {
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const admin = await Admin.findOne({ email });
+    const user = await User.findOne({ email });
 
-    if (!admin) {
+    if (!user) {
       return res.status(400).json({
         success: false,
-        message: "Identifiants invalides",
+        message: "Utilisateur introuvable",
       });
     }
 
-    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Compte désactivé",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       return res.status(400).json({
         success: false,
-        message: "Identifiants invalides",
+        message: "Mot de passe incorrect",
       });
     }
 
-    const token = jwt.sign(
-      {
-        id: admin._id,
-        role: admin.role,
+    res.status(200).json({
+      success: true,
+      token: generateToken(user._id),
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
       },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "7d",
-      }
-    );
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Utilisateur introuvable",
+      });
+    }
 
     res.status(200).json({
       success: true,
-      message: "Connexion réussie",
-      token,
+      data: user,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+const updateProfile = async (req, res) => {
+  try {
+    const { name, email } = req.body;
+
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Utilisateur introuvable",
+      });
+    }
+
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email });
+
+      if (existingUser && String(existingUser._id) !== String(user._id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Cet email est déjà utilisé",
+        });
+      }
+    }
+
+    user.name = name || user.name;
+    user.email = email || user.email;
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Profil mis à jour avec succès",
       data: {
-        id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
       },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Mot de passe actuel et nouveau mot de passe requis",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Le nouveau mot de passe doit contenir au moins 6 caractères",
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Utilisateur introuvable",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: "Mot de passe actuel incorrect",
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Mot de passe modifié avec succès",
     });
   } catch (error) {
     res.status(500).json({
@@ -94,6 +227,9 @@ const loginAdmin = async (req, res) => {
 };
 
 module.exports = {
-  registerAdmin,
-  loginAdmin,
+  register,
+  login,
+  getProfile,
+  updateProfile,
+  changePassword,
 };

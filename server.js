@@ -3,6 +3,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const connectDB = require("./config/db");
 
+
 dotenv.config();
 
 const app = express();
@@ -22,6 +23,9 @@ app.use("/api/events", require("./routes/eventRoutes"));
 app.use("/api/attendances", require("./routes/attendanceRoutes"));
 app.use("/api/dashboard", require("./routes/dashboardRoutes"));
 app.use("/api/departments", require("./routes/departmentRoutes"));
+app.use("/api/users", require("./routes/userRoutes"));
+app.use("/api/activity-logs", require("./routes/activityLogRoutes"));
+app.use("/api/assignments", require("./routes/assignmentRoutes"));
 
 const PORT = process.env.PORT || 8000;
 
