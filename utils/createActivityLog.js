@@ -16,9 +16,18 @@ const createActivityLog = async ({
       entityId,
       description,
     });
-  } catch (error) {
-    console.error("Erreur ActivityLog :", error.message);
+  
+  } catch (emailError) {
+    console.error("=== ERREUR EMAIL PROGRAMMATION ===");
+    console.error("Message :", emailError.message);
+    console.error("Code :", emailError.code);
+    console.error("Response :", emailError.response);
+    console.error("Command :", emailError.command);
+    console.error("Stack :", emailError.stack);
+  
+    assignment.emailStatus = "failed";
+    await assignment.save();
   }
-};
+  }
 
 module.exports = createActivityLog;

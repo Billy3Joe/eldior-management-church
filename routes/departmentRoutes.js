@@ -1,25 +1,57 @@
 const express = require("express");
 const router = express.Router();
 
-const protect = require("../middleware/authMiddleware");
+const protect = require(
+  "../middleware/authMiddleware"
+);
+
+const requireChurch = require(
+  "../middleware/tenantMiddleware"
+);
+
 const {
   createDepartment,
   getDepartments,
   getDepartmentById,
   updateDepartment,
   deleteDepartment,
-  getDepartmentStats,
-  getDepartmentWithMembers,
-  getDepartmentDetails,
-} = require("../controllers/departmentController");
+} = require(
+  "../controllers/departmentController"
+);
 
-router.post("/", protect, createDepartment);
-router.get("/", protect, getDepartments);
-router.get("/stats/all", protect, getDepartmentStats);
-router.get("/:id/members", protect, getDepartmentWithMembers);
-router.get("/:id/details", protect, getDepartmentDetails);
-router.get("/:id", protect, getDepartmentById);
-router.put("/:id", protect, updateDepartment);
-router.delete("/:id", protect, deleteDepartment);
+router.get(
+  "/",
+  protect,
+  requireChurch,
+  getDepartments
+);
+
+router.post(
+  "/",
+  protect,
+  requireChurch,
+  createDepartment
+);
+
+router.get(
+  "/:id",
+  protect,
+  requireChurch,
+  getDepartmentById
+);
+
+router.put(
+  "/:id",
+  protect,
+  requireChurch,
+  updateDepartment
+);
+
+router.delete(
+  "/:id",
+  protect,
+  requireChurch,
+  deleteDepartment
+);
 
 module.exports = router;

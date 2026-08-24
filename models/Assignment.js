@@ -2,6 +2,21 @@ const mongoose = require("mongoose");
 
 const assignmentSchema = new mongoose.Schema(
   {
+    // ==================================================
+    // ÉGLISE / TENANT
+    // ==================================================
+
+    church: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Church",
+      default: null,
+      index: true,
+    },
+
+    // ==================================================
+    // PROGRAMMATION
+    // ==================================================
+
     member: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Member",
@@ -26,16 +41,25 @@ const assignmentSchema = new mongoose.Schema(
       trim: true,
     },
 
-    status: {
-      type: String,
-      enum: ["pending", "confirmed", "declined", "cancelled"],
-      default: "pending",
-    },
-
     note: {
       type: String,
-      trim: true,
       default: "",
+      trim: true,
+    },
+
+    // ==================================================
+    // RÉPONSE DU MEMBRE
+    // ==================================================
+
+    status: {
+      type: String,
+      enum: [
+        "pending",
+        "confirmed",
+        "declined",
+        "cancelled",
+      ],
+      default: "pending",
     },
 
     confirmedAt: {
@@ -48,6 +72,71 @@ const assignmentSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ==================================================
+    // LIEN PUBLIC
+    // ==================================================
+
+    responseToken: {
+      type: String,
+      unique: true,
+      sparse: true,
+      default: null,
+    },
+
+    responseTokenExpiresAt: {
+      type: Date,
+      default: null,
+    },
+
+    // ==================================================
+    // EMAIL
+    // ==================================================
+
+    emailStatus: {
+      type: String,
+      enum: [
+        "not_sent",
+        "sent",
+        "failed",
+      ],
+      default: "not_sent",
+    },
+
+    firstEmailSentAt: {
+      type: Date,
+      default: null,
+    },
+
+    emailSentAt: {
+      type: Date,
+      default: null,
+    },
+
+    emailSendCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // ==================================================
+    // RAPPELS
+    // ==================================================
+
+    reminderCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    lastReminderAt: {
+      type: Date,
+      default: null,
+    },
+
+    // ==================================================
+    // CRÉATEUR
+    // ==================================================
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -59,10 +148,10 @@ const assignmentSchema = new mongoose.Schema(
   }
 );
 
-// Empêche de programmer deux fois
-// la même personne au même événement pour le même rôle.
+// Évite les doublons dans une même église.
 assignmentSchema.index(
   {
+    church: 1,
     member: 1,
     event: 1,
     role: 1,
@@ -72,4 +161,7 @@ assignmentSchema.index(
   }
 );
 
-module.exports = mongoose.model("Assignment", assignmentSchema);
+module.exports = mongoose.model(
+  "Assignment",
+  assignmentSchema
+);

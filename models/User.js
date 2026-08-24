@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
@@ -7,28 +8,84 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+
     email: {
       type: String,
       required: true,
       unique: true,
-      trim: true,
       lowercase: true,
+      trim: true,
     },
+
     password: {
       type: String,
       required: true,
+      minlength: 6,
     },
+
     role: {
       type: String,
       enum: ["admin", "manager"],
-      default: "admin",
+      default: "manager",
     },
+
+    // ==================================================
+    // ÉGLISE / TENANT
+    // ==================================================
+
+    church: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Church",
+      default: null,
+      index: true,
+    },
+
     isActive: {
       type: Boolean,
       default: true,
     },
+
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-module.exports = mongoose.model("User", userSchema);
+// ======================================================
+// HASH MOT DE PASSE AVANT SAUVEGARDE
+// ======================================================
+
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) {
+    return;
+  }
+
+  const salt = await bcrypt.genSalt(10);
+
+  this.password = await bcrypt.hash(
+    this.password,
+    salt
+  );
+});
+
+// ======================================================
+// COMPARER MOT DE PASSE
+// ======================================================
+
+userSchema.methods.matchPassword = async function (
+  enteredPassword
+) {
+  return bcrypt.compare(
+    enteredPassword,
+    this.password
+  );
+};
+
+module.exports = mongoose.model(
+  "User",
+  userSchema
+);

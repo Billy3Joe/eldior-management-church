@@ -1,11 +1,126 @@
 const mongoose = require("mongoose");
+const crypto = require("crypto");
+
 const Assignment = require("../models/Assignment");
 const Member = require("../models/Member");
 const Event = require("../models/Event");
 const Department = require("../models/Department");
-const createActivityLog = require("../utils/createActivityLog");
 
-// Créer une programmation
+const createActivityLog = require(
+  "../utils/createActivityLog"
+);
+
+const sendEmail = require(
+  "../utils/sendEmail"
+);
+
+const assignmentEmailTemplate = require(
+  "../utils/assignmentEmailTemplate"
+);
+
+// ======================================================
+// HELPER : EMAIL ENVOYÉ
+// ======================================================
+
+const markEmailAsSent = async (assignment) => {
+  const now = new Date();
+
+  if (!assignment.firstEmailSentAt) {
+    assignment.firstEmailSentAt = now;
+  }
+
+  assignment.emailSentAt = now;
+
+  assignment.emailSendCount =
+    (assignment.emailSendCount || 0) + 1;
+
+  assignment.emailStatus = "sent";
+
+  await assignment.save();
+};
+
+// ======================================================
+// HELPER : GÉNÉRER / RENOUVELER TOKEN
+// ======================================================
+
+const ensureResponseToken = async (assignment) => {
+  const now = new Date();
+
+  if (
+    !assignment.responseToken ||
+    !assignment.responseTokenExpiresAt ||
+    assignment.responseTokenExpiresAt <= now
+  ) {
+    assignment.responseToken = crypto
+      .randomBytes(32)
+      .toString("hex");
+
+    const expiresAt = new Date();
+
+    expiresAt.setDate(
+      expiresAt.getDate() + 30
+    );
+
+    assignment.responseTokenExpiresAt =
+      expiresAt;
+
+    await assignment.save();
+  }
+};
+
+// ======================================================
+// HELPER : ENVOYER EMAIL PROGRAMMATION
+// ======================================================
+
+const sendAssignmentEmail = async ({
+  assignment,
+  member,
+  event,
+  department,
+  subject,
+}) => {
+  if (!member?.email) {
+    throw new Error(
+      "Ce membre ne possède pas d'adresse email"
+    );
+  }
+
+  await ensureResponseToken(assignment);
+
+  const frontendUrl =
+    process.env.FRONTEND_URL ||
+    "http://localhost:5173";
+
+  const confirmUrl =
+    `${frontendUrl}/assignment-response/${assignment.responseToken}?action=confirm`;
+
+  const declineUrl =
+    `${frontendUrl}/assignment-response/${assignment.responseToken}?action=decline`;
+
+  const html = assignmentEmailTemplate({
+    member,
+    event,
+    department,
+    assignment,
+    confirmUrl,
+    declineUrl,
+  });
+
+  await sendEmail({
+    to: member.email,
+    subject,
+    html,
+  });
+
+  await markEmailAsSent(
+    assignment
+  );
+};
+
+// ======================================================
+// CRÉER UNE PROGRAMMATION
+// ======================================================
+
 const createAssignment = async (req, res) => {
   try {
     const {
@@ -16,10 +131,19 @@ const createAssignment = async (req, res) => {
       note,
     } = req.body;
 
-    if (!member || !event || !role) {
+    if (!req.churchId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Aucune église associée à cet utilisateur",
+      });
+    }
+
+    if (!member || !event || !role?.trim()) {
       return res.status(400).json({
         success: false,
-        message: "Membre, événement et rôle sont requis",
+        message:
+          "Membre, événement et rôle sont requis",
       });
     }
 
@@ -29,43 +153,78 @@ const createAssignment = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "ID membre ou événement invalide",
+        message:
+          "ID membre ou événement invalide",
       });
     }
 
-    const memberExists = await Member.findById(member);
-    const eventExists = await Event.findById(event);
+    if (
+      department &&
+      !mongoose.Types.ObjectId.isValid(department)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "ID département invalide",
+      });
+    }
+
+    // Le membre doit appartenir à la même église.
+    const memberExists =
+      await Member.findOne({
+        _id: member,
+        church: req.churchId,
+      });
 
     if (!memberExists) {
       return res.status(404).json({
         success: false,
-        message: "Membre introuvable",
+        message:
+          "Membre introuvable dans cette église",
       });
     }
+
+    // L'événement doit appartenir à la même église.
+    const eventExists =
+      await Event.findOne({
+        _id: event,
+        church: req.churchId,
+      });
 
     if (!eventExists) {
       return res.status(404).json({
         success: false,
-        message: "Événement introuvable",
+        message:
+          "Événement introuvable dans cette église",
       });
     }
 
+    // Le département doit appartenir à la même église.
+    let departmentExists = null;
+
     if (department) {
-      const departmentExists = await Department.findById(department);
+      departmentExists =
+        await Department.findOne({
+          _id: department,
+          church: req.churchId,
+        });
 
       if (!departmentExists) {
         return res.status(404).json({
           success: false,
-          message: "Département introuvable",
+          message:
+            "Département introuvable dans cette église",
         });
       }
     }
 
-    const existingAssignment = await Assignment.findOne({
-      member,
-      event,
-      role,
-    });
+    const existingAssignment =
+      await Assignment.findOne({
+        church: req.churchId,
+        member,
+        event,
+        role: role.trim(),
+      });
 
     if (existingAssignment) {
       return res.status(400).json({
@@ -75,55 +234,165 @@ const createAssignment = async (req, res) => {
       });
     }
 
-    const assignment = await Assignment.create({
-      member,
-      event,
-      department: department || null,
-      role,
-      note: note || "",
-      createdBy: req.user?._id || null,
-    });
+    const responseToken = crypto
+      .randomBytes(32)
+      .toString("hex");
 
-    const populatedAssignment = await Assignment.findById(assignment._id)
-      .populate("member", "firstName lastName email phone")
-      .populate("event", "title date type location status")
-      .populate("department", "name")
-      .populate("createdBy", "name email role");
+    const responseTokenExpiresAt =
+      new Date();
+
+    responseTokenExpiresAt.setDate(
+      responseTokenExpiresAt.getDate() + 30
+    );
+
+    const assignment =
+      await Assignment.create({
+        church: req.churchId,
+
+        member,
+        event,
+
+        department:
+          department || null,
+
+        role:
+          role.trim(),
+
+        note:
+          note?.trim() || "",
+
+        status:
+          "pending",
+
+        createdBy:
+          req.user?._id || null,
+
+        responseToken,
+        responseTokenExpiresAt,
+
+        emailStatus:
+          "not_sent",
+
+        emailSendCount: 0,
+        reminderCount: 0,
+      });
+
+    // ==================================================
+    // EMAIL AUTOMATIQUE
+    // ==================================================
+
+    if (memberExists.email) {
+      try {
+        await sendAssignmentEmail({
+          assignment,
+
+          member:
+            memberExists,
+
+          event:
+            eventExists,
+
+          department:
+            departmentExists,
+
+          subject:
+            `Votre programmation - ${eventExists.title}`,
+        });
+      } catch (emailError) {
+        console.error(
+          "Erreur email programmation :",
+          emailError.message
+        );
+
+        assignment.emailStatus =
+          "failed";
+
+        await assignment.save();
+      }
+    }
+
+    const populatedAssignment =
+      await Assignment.findOne({
+        _id: assignment._id,
+        church: req.churchId,
+      })
+        .populate(
+          "member",
+          "firstName lastName email phone status"
+        )
+        .populate(
+          "event",
+          "title date type location status"
+        )
+        .populate(
+          "department",
+          "name leader status"
+        )
+        .populate(
+          "createdBy",
+          "name email role"
+        );
 
     await createActivityLog({
       req,
       action: "CREATE",
       entity: "Assignment",
-      entityId: assignment._id,
-      description: `Programmation de ${memberExists.firstName || ""} ${
-        memberExists.lastName || ""
-      } pour ${eventExists.title || ""} - rôle : ${role}`.trim(),
+      entityId:
+        assignment._id,
+
+      description:
+        `Programmation de ${
+          memberExists.firstName || ""
+        } ${
+          memberExists.lastName || ""
+        } pour ${
+          eventExists.title || ""
+        } - rôle : ${role.trim()}`,
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: "Programmation créée avec succès",
-      data: populatedAssignment,
+      message:
+        "Programmation créée avec succès",
+      data:
+        populatedAssignment,
     });
   } catch (error) {
+    console.error(
+      "Erreur createAssignment :",
+      error
+    );
+
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
         message:
-          "Ce membre est déjà programmé pour ce rôle sur cet événement",
+          "Cette programmation existe déjà",
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Liste des programmations avec filtres et pagination
+// ======================================================
+// LISTE DES PROGRAMMATIONS
+// ======================================================
+
 const getAssignments = async (req, res) => {
   try {
+    if (!req.churchId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Aucune église associée à cet utilisateur",
+      });
+    }
+
     const {
       event,
       member,
@@ -132,16 +401,41 @@ const getAssignments = async (req, res) => {
       search,
     } = req.query;
 
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    const page =
+      parseInt(
+        req.query.page,
+        10
+      ) || 1;
 
-    const filter = {};
+    const limit =
+      parseInt(
+        req.query.limit,
+        10
+      ) || 10;
 
-    if (event) filter.event = event;
-    if (member) filter.member = member;
-    if (department) filter.department = department;
-    if (status) filter.status = status;
+    const skip =
+      (page - 1) * limit;
+
+    const filter = {
+      church: req.churchId,
+    };
+
+    if (event) {
+      filter.event = event;
+    }
+
+    if (member) {
+      filter.member = member;
+    }
+
+    if (department) {
+      filter.department =
+        department;
+    }
+
+    if (status) {
+      filter.status = status;
+    }
 
     if (search) {
       filter.role = {
@@ -150,183 +444,483 @@ const getAssignments = async (req, res) => {
       };
     }
 
-    const total = await Assignment.countDocuments(filter);
+    const total =
+      await Assignment.countDocuments(
+        filter
+      );
 
-    const assignments = await Assignment.find(filter)
-      .populate("member", "firstName lastName email phone status")
-      .populate("event", "title date type location status")
-      .populate("department", "name leader status")
-      .populate("createdBy", "name email role")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const assignments =
+      await Assignment.find(filter)
+        .populate(
+          "member",
+          "firstName lastName email phone status"
+        )
+        .populate(
+          "event",
+          "title date type location status"
+        )
+        .populate(
+          "department",
+          "name leader status"
+        )
+        .populate(
+          "createdBy",
+          "name email role"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .skip(skip)
+        .limit(limit);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
+
       page,
       limit,
       total,
-      totalPages: Math.ceil(total / limit),
-      count: assignments.length,
-      data: assignments,
+
+      totalPages:
+        Math.ceil(
+          total / limit
+        ),
+
+      count:
+        assignments.length,
+
+      data:
+        assignments,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error(
+      "Erreur getAssignments :",
+      error
+    );
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Détail d'une programmation
-const getAssignmentById = async (req, res) => {
-  try {
-    const { id } = req.params;
+// ======================================================
+// DÉTAIL
+// ======================================================
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+const getAssignmentById = async (
+  req,
+  res
+) => {
+  try {
+    const { id } =
+      req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "ID programmation invalide",
+        message:
+          "ID programmation invalide",
       });
     }
 
-    const assignment = await Assignment.findById(id)
-      .populate("member")
-      .populate("event")
-      .populate("department")
-      .populate("createdBy", "name email role");
+    const assignment =
+      await Assignment.findOne({
+        _id: id,
+        church: req.churchId,
+      })
+        .populate(
+          "member"
+        )
+        .populate(
+          "event"
+        )
+        .populate(
+          "department"
+        )
+        .populate(
+          "createdBy",
+          "name email role"
+        );
 
     if (!assignment) {
       return res.status(404).json({
         success: false,
-        message: "Programmation introuvable",
+        message:
+          "Programmation introuvable",
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      data: assignment,
+      data:
+        assignment,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Modifier une programmation
-const updateAssignment = async (req, res) => {
-  try {
-    const { id } = req.params;
+// ======================================================
+// MODIFIER
+// ======================================================
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+const updateAssignment = async (
+  req,
+  res
+) => {
+  try {
+    const { id } =
+      req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "ID programmation invalide",
+        message:
+          "ID programmation invalide",
       });
     }
 
-    const assignment = await Assignment.findById(id);
+    const assignment =
+      await Assignment.findOne({
+        _id: id,
+        church: req.churchId,
+      });
 
     if (!assignment) {
       return res.status(404).json({
         success: false,
-        message: "Programmation introuvable",
+        message:
+          "Programmation introuvable",
       });
     }
 
-    const allowedFields = [
-      "member",
-      "event",
-      "department",
-      "role",
-      "note",
-      "status",
-    ];
+    const {
+      member,
+      event,
+      department,
+      role,
+      note,
+      status,
+    } = req.body;
 
-    allowedFields.forEach((field) => {
-      if (typeof req.body[field] !== "undefined") {
-        assignment[field] = req.body[field];
+    // ==============================
+    // MEMBRE
+    // ==============================
+
+    if (
+      typeof member !== "undefined"
+    ) {
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          member
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "ID membre invalide",
+        });
       }
-    });
 
-    if (assignment.status === "confirmed" && !assignment.confirmedAt) {
-      assignment.confirmedAt = new Date();
-      assignment.declinedAt = null;
+      const memberExists =
+        await Member.findOne({
+          _id: member,
+          church: req.churchId,
+        });
+
+      if (!memberExists) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Membre introuvable dans cette église",
+        });
+      }
+
+      assignment.member =
+        member;
     }
 
-    if (assignment.status === "declined" && !assignment.declinedAt) {
-      assignment.declinedAt = new Date();
-      assignment.confirmedAt = null;
+    // ==============================
+    // ÉVÉNEMENT
+    // ==============================
+
+    if (
+      typeof event !== "undefined"
+    ) {
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          event
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "ID événement invalide",
+        });
+      }
+
+      const eventExists =
+        await Event.findOne({
+          _id: event,
+          church: req.churchId,
+        });
+
+      if (!eventExists) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Événement introuvable dans cette église",
+        });
+      }
+
+      assignment.event =
+        event;
     }
 
-    if (assignment.status === "pending") {
-      assignment.confirmedAt = null;
-      assignment.declinedAt = null;
+    // ==============================
+    // DÉPARTEMENT
+    // ==============================
+
+    if (
+      typeof department !==
+      "undefined"
+    ) {
+      if (department) {
+        if (
+          !mongoose.Types.ObjectId.isValid(
+            department
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "ID département invalide",
+          });
+        }
+
+        const departmentExists =
+          await Department.findOne({
+            _id:
+              department,
+
+            church:
+              req.churchId,
+          });
+
+        if (!departmentExists) {
+          return res.status(404).json({
+            success: false,
+            message:
+              "Département introuvable dans cette église",
+          });
+        }
+
+        assignment.department =
+          department;
+      } else {
+        assignment.department =
+          null;
+      }
+    }
+
+    if (
+      typeof role !==
+      "undefined"
+    ) {
+      if (!role.trim()) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Le rôle ne peut pas être vide",
+        });
+      }
+
+      assignment.role =
+        role.trim();
+    }
+
+    if (
+      typeof note !==
+      "undefined"
+    ) {
+      assignment.note =
+        note.trim();
+    }
+
+    if (
+      typeof status !==
+      "undefined"
+    ) {
+      assignment.status =
+        status;
+    }
+
+    if (
+      assignment.status ===
+      "confirmed"
+    ) {
+      assignment.confirmedAt =
+        assignment.confirmedAt ||
+        new Date();
+
+      assignment.declinedAt =
+        null;
+    }
+
+    if (
+      assignment.status ===
+      "declined"
+    ) {
+      assignment.declinedAt =
+        assignment.declinedAt ||
+        new Date();
+
+      assignment.confirmedAt =
+        null;
+    }
+
+    if (
+      assignment.status ===
+      "pending"
+    ) {
+      assignment.confirmedAt =
+        null;
+
+      assignment.declinedAt =
+        null;
     }
 
     await assignment.save();
 
-    const populatedAssignment = await Assignment.findById(id)
-      .populate("member", "firstName lastName email phone")
-      .populate("event", "title date type location status")
-      .populate("department", "name")
-      .populate("createdBy", "name email role");
+    const populatedAssignment =
+      await Assignment.findOne({
+        _id: assignment._id,
+        church: req.churchId,
+      })
+        .populate(
+          "member",
+          "firstName lastName email phone"
+        )
+        .populate(
+          "event",
+          "title date type location status"
+        )
+        .populate(
+          "department",
+          "name"
+        )
+        .populate(
+          "createdBy",
+          "name email role"
+        );
 
     await createActivityLog({
       req,
       action: "UPDATE",
       entity: "Assignment",
-      entityId: assignment._id,
-      description: `Modification d'une programmation - rôle : ${
-        assignment.role || ""
-      }`,
+      entityId:
+        assignment._id,
+
+      description:
+        `Modification de la programmation - rôle : ${
+          assignment.role || ""
+        }`,
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: "Programmation mise à jour avec succès",
-      data: populatedAssignment,
+      message:
+        "Programmation mise à jour avec succès",
+      data:
+        populatedAssignment,
     });
   } catch (error) {
+    console.error(
+      "Erreur updateAssignment :",
+      error
+    );
+
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
         message:
-          "Cette programmation existe déjà pour ce membre, cet événement et ce rôle",
+          "Cette programmation existe déjà",
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Supprimer une programmation
-const deleteAssignment = async (req, res) => {
-  try {
-    const { id } = req.params;
+// ======================================================
+// SUPPRIMER
+// ======================================================
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+const deleteAssignment = async (
+  req,
+  res
+) => {
+  try {
+    const { id } =
+      req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "ID programmation invalide",
+        message:
+          "ID programmation invalide",
       });
     }
 
-    const assignment = await Assignment.findById(id)
-      .populate("member", "firstName lastName")
-      .populate("event", "title");
+    const assignment =
+      await Assignment.findOne({
+        _id: id,
+        church: req.churchId,
+      })
+        .populate(
+          "member",
+          "firstName lastName"
+        )
+        .populate(
+          "event",
+          "title"
+        );
 
     if (!assignment) {
       return res.status(404).json({
         success: false,
-        message: "Programmation introuvable",
+        message:
+          "Programmation introuvable",
       });
     }
+
+    const description =
+      `Suppression de la programmation de ${
+        assignment.member?.firstName ||
+        ""
+      } ${
+        assignment.member?.lastName ||
+        ""
+      } pour ${
+        assignment.event?.title ||
+        ""
+      }`.trim();
 
     await assignment.deleteOne();
 
@@ -335,127 +929,564 @@ const deleteAssignment = async (req, res) => {
       action: "DELETE",
       entity: "Assignment",
       entityId: id,
-      description: `Suppression de la programmation de ${
-        assignment.member?.firstName || ""
-      } ${assignment.member?.lastName || ""} pour ${
-        assignment.event?.title || ""
-      }`.trim(),
+      description,
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: "Programmation supprimée avec succès",
+      message:
+        "Programmation supprimée avec succès",
     });
   } catch (error) {
-    res.status(500).json({
+    console.error(
+      "Erreur deleteAssignment :",
+      error
+    );
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Confirmer une programmation
-const confirmAssignment = async (req, res) => {
-  try {
-    const { id } = req.params;
+// ======================================================
+// CONFIRMER CÔTÉ ADMIN
+// ======================================================
 
-    const assignment = await Assignment.findById(id);
+const confirmAssignment = async (
+  req,
+  res
+) => {
+  try {
+    const assignment =
+      await Assignment.findOne({
+        _id: req.params.id,
+        church: req.churchId,
+      });
 
     if (!assignment) {
       return res.status(404).json({
         success: false,
-        message: "Programmation introuvable",
+        message:
+          "Programmation introuvable",
       });
     }
 
-    assignment.status = "confirmed";
-    assignment.confirmedAt = new Date();
-    assignment.declinedAt = null;
+    assignment.status =
+      "confirmed";
+
+    assignment.confirmedAt =
+      new Date();
+
+    assignment.declinedAt =
+      null;
 
     await assignment.save();
 
-    res.status(200).json({
+    await createActivityLog({
+      req,
+      action: "UPDATE",
+      entity: "Assignment",
+      entityId:
+        assignment._id,
+
+      description:
+        "Programmation confirmée manuellement",
+    });
+
+    return res.status(200).json({
       success: true,
-      message: "Participation confirmée",
-      data: assignment,
+      message:
+        "Participation confirmée",
+      data:
+        assignment,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Refuser une programmation
-const declineAssignment = async (req, res) => {
-  try {
-    const { id } = req.params;
+// ======================================================
+// REFUSER CÔTÉ ADMIN
+// ======================================================
 
-    const assignment = await Assignment.findById(id);
+const declineAssignment = async (
+  req,
+  res
+) => {
+  try {
+    const assignment =
+      await Assignment.findOne({
+        _id: req.params.id,
+        church: req.churchId,
+      });
 
     if (!assignment) {
       return res.status(404).json({
         success: false,
-        message: "Programmation introuvable",
+        message:
+          "Programmation introuvable",
       });
     }
 
-    assignment.status = "declined";
-    assignment.declinedAt = new Date();
-    assignment.confirmedAt = null;
+    assignment.status =
+      "declined";
+
+    assignment.declinedAt =
+      new Date();
+
+    assignment.confirmedAt =
+      null;
 
     await assignment.save();
 
-    res.status(200).json({
+    await createActivityLog({
+      req,
+      action: "UPDATE",
+      entity: "Assignment",
+      entityId:
+        assignment._id,
+
+      description:
+        "Programmation refusée manuellement",
+    });
+
+    return res.status(200).json({
       success: true,
-      message: "Participation refusée",
-      data: assignment,
+      message:
+        "Participation refusée",
+      data:
+        assignment,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Résumé global
-const getAssignmentStats = async (req, res) => {
-  try {
-    const total = await Assignment.countDocuments();
-    const pending = await Assignment.countDocuments({ status: "pending" });
-    const confirmed = await Assignment.countDocuments({
-      status: "confirmed",
-    });
-    const declined = await Assignment.countDocuments({
-      status: "declined",
-    });
-    const cancelled = await Assignment.countDocuments({
-      status: "cancelled",
-    });
+// ======================================================
+// STATISTIQUES
+// ======================================================
 
-    res.status(200).json({
+const getAssignmentStats = async (
+  req,
+  res
+) => {
+  try {
+    const churchFilter = {
+      church: req.churchId,
+    };
+
+    const [
+      total,
+      pending,
+      confirmed,
+      declined,
+      cancelled,
+    ] = await Promise.all([
+      Assignment.countDocuments(
+        churchFilter
+      ),
+
+      Assignment.countDocuments({
+        ...churchFilter,
+        status: "pending",
+      }),
+
+      Assignment.countDocuments({
+        ...churchFilter,
+        status: "confirmed",
+      }),
+
+      Assignment.countDocuments({
+        ...churchFilter,
+        status: "declined",
+      }),
+
+      Assignment.countDocuments({
+        ...churchFilter,
+        status: "cancelled",
+      }),
+    ]);
+
+    const confirmationRate =
+      total > 0
+        ? Number(
+            (
+              (confirmed / total) *
+              100
+            ).toFixed(2)
+          )
+        : 0;
+
+    return res.status(200).json({
       success: true,
+
       data: {
         total,
         pending,
         confirmed,
         declined,
         cancelled,
-        confirmationRate:
-          total > 0
-            ? Number(((confirmed / total) * 100).toFixed(2))
-            : 0,
+        confirmationRate,
       },
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
+
+// ======================================================
+// PROGRAMMATION PUBLIQUE
+// ======================================================
+// Pas besoin de connexion.
+// Le token aléatoire identifie la programmation.
+// ======================================================
+
+const getPublicAssignment = async (
+  req,
+  res
+) => {
+  try {
+    const { token } =
+      req.params;
+
+    const assignment =
+      await Assignment.findOne({
+        responseToken: token,
+
+        responseTokenExpiresAt: {
+          $gt: new Date(),
+        },
+      })
+        .populate(
+          "member",
+          "firstName lastName"
+        )
+        .populate(
+          "event",
+          "title date location type status"
+        )
+        .populate(
+          "department",
+          "name"
+        )
+        .populate(
+          "church",
+          "name slug"
+        );
+
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Lien invalide ou expiré",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+
+      data: {
+        member:
+          assignment.member,
+
+        event:
+          assignment.event,
+
+        department:
+          assignment.department,
+
+        church:
+          assignment.church,
+
+        role:
+          assignment.role,
+
+        note:
+          assignment.note,
+
+        status:
+          assignment.status,
+
+        confirmedAt:
+          assignment.confirmedAt,
+
+        declinedAt:
+          assignment.declinedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+};
+
+// ======================================================
+// RÉPONSE PUBLIQUE
+// ======================================================
+
+const respondToAssignment = async (
+  req,
+  res
+) => {
+  try {
+    const { token } =
+      req.params;
+
+    const { action } =
+      req.body;
+
+    if (
+      ![
+        "confirm",
+        "decline",
+      ].includes(action)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Réponse invalide",
+      });
+    }
+
+    const assignment =
+      await Assignment.findOne({
+        responseToken: token,
+
+        responseTokenExpiresAt: {
+          $gt: new Date(),
+        },
+      });
+
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Lien invalide ou expiré",
+      });
+    }
+
+    if (
+      assignment.status ===
+      "cancelled"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cette programmation a été annulée",
+      });
+    }
+
+    if (action === "confirm") {
+      assignment.status =
+        "confirmed";
+
+      assignment.confirmedAt =
+        new Date();
+
+      assignment.declinedAt =
+        null;
+    }
+
+    if (action === "decline") {
+      assignment.status =
+        "declined";
+
+      assignment.declinedAt =
+        new Date();
+
+      assignment.confirmedAt =
+        null;
+    }
+
+    await assignment.save();
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        action === "confirm"
+          ? "Votre participation est confirmée"
+          : "Votre indisponibilité a été enregistrée",
+
+      data: {
+        status:
+          assignment.status,
+
+        confirmedAt:
+          assignment.confirmedAt,
+
+        declinedAt:
+          assignment.declinedAt,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Erreur respondToAssignment :",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+};
+
+// ======================================================
+// RENVOYER EMAIL
+// ======================================================
+
+const resendAssignmentEmail = async (
+  req,
+  res
+) => {
+  try {
+    const { id } =
+      req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "ID programmation invalide",
+      });
+    }
+
+    const assignment =
+      await Assignment.findOne({
+        _id: id,
+        church: req.churchId,
+      })
+        .populate(
+          "member"
+        )
+        .populate(
+          "event"
+        )
+        .populate(
+          "department"
+        );
+
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Programmation introuvable",
+      });
+    }
+
+    if (
+      !assignment.member?.email
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Ce membre ne possède pas d'adresse email",
+      });
+    }
+
+    try {
+      await sendAssignmentEmail({
+        assignment,
+
+        member:
+          assignment.member,
+
+        event:
+          assignment.event,
+
+        department:
+          assignment.department,
+
+        subject:
+          `Rappel de programmation - ${
+            assignment.event
+              ?.title ||
+            "Événement"
+          }`,
+      });
+    } catch (emailError) {
+      console.error(
+        "Erreur renvoi email :",
+        emailError.message
+      );
+
+      assignment.emailStatus =
+        "failed";
+
+      await assignment.save();
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "L'email n'a pas pu être envoyé",
+      });
+    }
+
+    await createActivityLog({
+      req,
+      action: "UPDATE",
+      entity: "Assignment",
+      entityId:
+        assignment._id,
+
+      description:
+        `Email de programmation renvoyé à ${
+          assignment.member
+            ?.firstName ||
+          ""
+        } ${
+          assignment.member
+            ?.lastName ||
+          ""
+        }`.trim(),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Email renvoyé avec succès",
+      data:
+        assignment,
+    });
+  } catch (error) {
+    console.error(
+      "Erreur resendAssignmentEmail :",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+};
+
+// ======================================================
+// EXPORTS
+// ======================================================
 
 module.exports = {
   createAssignment,
@@ -463,7 +1494,14 @@ module.exports = {
   getAssignmentById,
   updateAssignment,
   deleteAssignment,
+
   confirmAssignment,
   declineAssignment,
+
   getAssignmentStats,
+
+  getPublicAssignment,
+  respondToAssignment,
+
+  resendAssignmentEmail,
 };

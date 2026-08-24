@@ -1,465 +1,676 @@
+const mongoose = require("mongoose");
+
 const Attendance = require("../models/Attendance");
 const Member = require("../models/Member");
 const Event = require("../models/Event");
-const mongoose = require("mongoose");
 
-// Créer une présence simple
-const createAttendance = async (req, res) => {
-  try {
-    const attendance = await Attendance.create(req.body);
+const createActivityLog = require(
+  "../utils/createActivityLog"
+);
 
-    res.status(201).json({
-      success: true,
-      data: attendance,
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+// ======================================================
+// MARQUER UNE PRÉSENCE
+// ======================================================
 
-// Marquer ou mettre à jour la présence d'un membre pour un événement
 const markAttendance = async (req, res) => {
   try {
-    const { memberId, eventId, status } = req.body;
+    const {
+      member,
+      event,
+      status,
+      note,
+    } = req.body;
 
-    if (!memberId || !eventId || !status) {
+    if (!req.churchId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Aucune église associée à cet utilisateur",
+      });
+    }
+
+    if (!member || !event) {
       return res.status(400).json({
         success: false,
-        message: "memberId, eventId et status sont requis",
+        message:
+          "Le membre et l'événement sont obligatoires",
       });
     }
 
     if (
-      !mongoose.Types.ObjectId.isValid(memberId) ||
-      !mongoose.Types.ObjectId.isValid(eventId)
+      !mongoose.Types.ObjectId.isValid(member) ||
+      !mongoose.Types.ObjectId.isValid(event)
     ) {
       return res.status(400).json({
         success: false,
-        message: "memberId ou eventId invalide",
+        message:
+          "ID membre ou événement invalide",
       });
     }
 
-    const memberExists = await Member.findById(memberId);
-    const eventExists = await Event.findById(eventId);
+    const memberExists = await Member.findOne({
+      _id: member,
+      church: req.churchId,
+    });
 
     if (!memberExists) {
       return res.status(404).json({
         success: false,
-        message: "Membre introuvable",
+        message:
+          "Membre introuvable dans cette église",
       });
     }
+
+    const eventExists = await Event.findOne({
+      _id: event,
+      church: req.churchId,
+    });
 
     if (!eventExists) {
       return res.status(404).json({
         success: false,
-        message: "Événement introuvable",
+        message:
+          "Événement introuvable dans cette église",
       });
     }
 
-    const attendance = await Attendance.findOneAndUpdate(
-      { memberId, eventId },
-      { status },
-      { new: true, upsert: true, runValidators: true }
-    );
+    const existingAttendance =
+      await Attendance.findOne({
+        church: req.churchId,
+        member,
+        event,
+      });
 
-    res.status(200).json({
+    if (existingAttendance) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "La présence de ce membre est déjà enregistrée pour cet événement",
+      });
+    }
+
+    const attendance =
+      await Attendance.create({
+        church: req.churchId,
+        member,
+        event,
+
+        status:
+          status || "Présent",
+
+        note:
+          note?.trim() || "",
+
+        markedBy:
+          req.user?._id || null,
+
+        markedAt:
+          new Date(),
+      });
+
+    const populatedAttendance =
+      await Attendance.findOne({
+        _id: attendance._id,
+        church: req.churchId,
+      })
+        .populate(
+          "member",
+          "firstName lastName email phone"
+        )
+        .populate(
+          "event",
+          "title date location type status"
+        )
+        .populate(
+          "markedBy",
+          "name email role"
+        );
+
+    await createActivityLog({
+      req,
+      action: "CREATE",
+      entity: "Attendance",
+      entityId: attendance._id,
+      description:
+        `Présence enregistrée pour ${memberExists.firstName} ${memberExists.lastName} - ${eventExists.title}`,
+    });
+
+    return res.status(201).json({
       success: true,
-      data: attendance,
+      message:
+        "Présence enregistrée avec succès",
+      data:
+        populatedAttendance,
     });
   } catch (error) {
-    res.status(400).json({
+    console.error(
+      "Erreur markAttendance :",
+      error
+    );
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cette présence existe déjà",
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Liste paginée des présences
+// ======================================================
+// LISTE DES PRÉSENCES
+// ======================================================
+
 const getAttendances = async (req, res) => {
   try {
-    const { status, memberId, eventId } = req.query;
+    if (!req.churchId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Aucune église associée à cet utilisateur",
+      });
+    }
 
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const skip = (page - 1) * limit;
+    const page =
+      parseInt(req.query.page, 10) || 1;
 
-    const filter = {};
+    const limit =
+      parseInt(req.query.limit, 10) || 10;
 
-    if (status) filter.status = status;
-    if (memberId) filter.memberId = memberId;
-    if (eventId) filter.eventId = eventId;
+    const skip =
+      (page - 1) * limit;
 
-    const total = await Attendance.countDocuments(filter);
+    const {
+      member,
+      event,
+      status,
+    } = req.query;
 
-    const attendances = await Attendance.find(filter)
-      .populate("memberId")
-      .populate("eventId")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const filter = {
+      church: req.churchId,
+    };
 
-    res.status(200).json({
+    if (member) {
+      filter.member = member;
+    }
+
+    if (event) {
+      filter.event = event;
+    }
+
+    if (status) {
+      filter.status = status;
+    }
+
+    const total =
+      await Attendance.countDocuments(filter);
+
+    const attendances =
+      await Attendance.find(filter)
+        .populate(
+          "member",
+          "firstName lastName email phone"
+        )
+        .populate(
+          "event",
+          "title date location type status"
+        )
+        .populate(
+          "markedBy",
+          "name email role"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .skip(skip)
+        .limit(limit);
+
+    return res.status(200).json({
       success: true,
       page,
       limit,
       total,
-      totalPages: Math.ceil(total / limit),
-      count: attendances.length,
-      data: attendances,
+      totalPages:
+        Math.ceil(total / limit),
+      count:
+        attendances.length,
+      data:
+        attendances,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// Une présence par ID
-const getAttendanceById = async (req, res) => {
-  try {
-    const attendance = await Attendance.findById(req.params.id)
-      .populate("memberId")
-      .populate("eventId");
-
-    if (!attendance) {
-      return res.status(404).json({
-        success: false,
-        message: "Présence introuvable",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: attendance,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// Modifier une présence
-const updateAttendance = async (req, res) => {
-  try {
-    const attendance = await Attendance.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
+    console.error(
+      "Erreur getAttendances :",
+      error
     );
 
-    if (!attendance) {
-      return res.status(404).json({
-        success: false,
-        message: "Présence introuvable",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: attendance,
-    });
-  } catch (error) {
-    res.status(400).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Supprimer une présence
-const deleteAttendance = async (req, res) => {
-  try {
-    const attendance = await Attendance.findByIdAndDelete(req.params.id);
+// ======================================================
+// PRÉSENCES PAR ÉVÉNEMENT
+// ======================================================
 
-    if (!attendance) {
-      return res.status(404).json({
-        success: false,
-        message: "Présence introuvable",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Présence supprimée avec succès",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// Retourne tous les membres avec leur statut pour un événement
-const getAttendanceByEvent = async (req, res) => {
+const getAttendancesByEvent = async (
+  req,
+  res
+) => {
   try {
     const { eventId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(eventId)) {
+    if (
+      !mongoose.Types.ObjectId.isValid(eventId)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "eventId invalide",
+        message:
+          "ID événement invalide",
       });
     }
 
-    const members = await Member.find().populate("department").sort({
-      firstName: 1,
-      lastName: 1,
-    });
+    const event =
+      await Event.findOne({
+        _id: eventId,
+        church: req.churchId,
+      });
 
-    const attendances = await Attendance.find({ eventId });
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Événement introuvable",
+      });
+    }
 
-    const attendanceMap = new Map();
-    attendances.forEach((item) => {
-      attendanceMap.set(String(item.memberId), item.status);
-    });
+    const attendances =
+      await Attendance.find({
+        church: req.churchId,
+        event: eventId,
+      })
+        .populate(
+          "member",
+          "firstName lastName email phone department"
+        )
+        .populate(
+          "markedBy",
+          "name email role"
+        )
+        .sort({
+          createdAt: -1,
+        });
 
-    const data = members.map((member) => ({
-      member,
-      status: attendanceMap.get(String(member._id)) || "Non marqué",
-    }));
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      data,
+      count:
+        attendances.length,
+      data:
+        attendances,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error(
+      "Erreur getAttendancesByEvent :",
+      error
+    );
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Résumé de présence pour un événement
-const getAttendanceSummaryByEvent = async (req, res) => {
-  try {
-    const { eventId } = req.params;
+// ======================================================
+// DÉTAIL D'UNE PRÉSENCE
+// ======================================================
 
-    if (!mongoose.Types.ObjectId.isValid(eventId)) {
+const getAttendanceById = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "eventId invalide",
+        message:
+          "ID présence invalide",
       });
     }
 
-    const totalMembers = await Member.countDocuments();
+    const attendance =
+      await Attendance.findOne({
+        _id: id,
+        church: req.churchId,
+      })
+        .populate(
+          "member",
+          "firstName lastName email phone"
+        )
+        .populate(
+          "event",
+          "title date location type status"
+        )
+        .populate(
+          "markedBy",
+          "name email role"
+        );
 
-    const present = await Attendance.countDocuments({
-      eventId,
-      status: "Présent",
+    if (!attendance) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Présence introuvable",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data:
+        attendance,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+};
+
+// ======================================================
+// MODIFIER UNE PRÉSENCE
+// ======================================================
+
+const updateAttendance = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "ID présence invalide",
+      });
+    }
+
+    const attendance =
+      await Attendance.findOne({
+        _id: id,
+        church: req.churchId,
+      });
+
+    if (!attendance) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Présence introuvable",
+      });
+    }
+
+    const {
+      status,
+      note,
+    } = req.body;
+
+    if (
+      typeof status !== "undefined"
+    ) {
+      attendance.status = status;
+    }
+
+    if (
+      typeof note !== "undefined"
+    ) {
+      attendance.note =
+        note.trim();
+    }
+
+    attendance.markedBy =
+      req.user?._id ||
+      attendance.markedBy;
+
+    attendance.markedAt =
+      new Date();
+
+    await attendance.save();
+
+    const updatedAttendance =
+      await Attendance.findOne({
+        _id: attendance._id,
+        church: req.churchId,
+      })
+        .populate(
+          "member",
+          "firstName lastName email phone"
+        )
+        .populate(
+          "event",
+          "title date location type status"
+        )
+        .populate(
+          "markedBy",
+          "name email role"
+        );
+
+    await createActivityLog({
+      req,
+      action: "UPDATE",
+      entity: "Attendance",
+      entityId: attendance._id,
+      description:
+        `Modification d'une présence - statut : ${attendance.status}`,
     });
 
-    const absent = await Attendance.countDocuments({
-      eventId,
-      status: "Absent",
+    return res.status(200).json({
+      success: true,
+      message:
+        "Présence mise à jour avec succès",
+      data:
+        updatedAttendance,
+    });
+  } catch (error) {
+    console.error(
+      "Erreur updateAttendance :",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+};
+
+// ======================================================
+// SUPPRIMER UNE PRÉSENCE
+// ======================================================
+
+const deleteAttendance = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "ID présence invalide",
+      });
+    }
+
+    const attendance =
+      await Attendance.findOne({
+        _id: id,
+        church: req.churchId,
+      });
+
+    if (!attendance) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Présence introuvable",
+      });
+    }
+
+    await attendance.deleteOne();
+
+    await createActivityLog({
+      req,
+      action: "DELETE",
+      entity: "Attendance",
+      entityId: id,
+      description:
+        "Suppression d'une présence",
     });
 
-    const excused = await Attendance.countDocuments({
-      eventId,
-      status: "Excusé",
+    return res.status(200).json({
+      success: true,
+      message:
+        "Présence supprimée avec succès",
     });
+  } catch (error) {
+    console.error(
+      "Erreur deleteAttendance :",
+      error
+    );
 
-    const marked = present + absent + excused;
-    const notMarked = Math.max(totalMembers - marked, 0);
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message,
+    });
+  }
+};
 
-    res.status(200).json({
+// ======================================================
+// RÉSUMÉ DES PRÉSENCES
+// ======================================================
+
+const getAttendanceSummary = async (
+  req,
+  res
+) => {
+  try {
+    if (!req.churchId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Aucune église associée à cet utilisateur",
+      });
+    }
+
+    const { event } = req.query;
+
+    const baseFilter = {
+      church: req.churchId,
+    };
+
+    if (event) {
+      baseFilter.event = event;
+    }
+
+    const [
+      total,
+      present,
+      absent,
+      excused,
+      late,
+    ] = await Promise.all([
+      Attendance.countDocuments(
+        baseFilter
+      ),
+
+      Attendance.countDocuments({
+        ...baseFilter,
+        status: "Présent",
+      }),
+
+      Attendance.countDocuments({
+        ...baseFilter,
+        status: "Absent",
+      }),
+
+      Attendance.countDocuments({
+        ...baseFilter,
+        status: "Excusé",
+      }),
+
+      Attendance.countDocuments({
+        ...baseFilter,
+        status: "En retard",
+      }),
+    ]);
+
+    const attendanceRate =
+      total > 0
+        ? Number(
+            (
+              (present / total) *
+              100
+            ).toFixed(2)
+          )
+        : 0;
+
+    return res.status(200).json({
       success: true,
       data: {
-        totalMembers,
+        total,
         present,
         absent,
         excused,
-        notMarked,
+        late,
+        attendanceRate,
       },
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// Analytics globales
-const getAttendanceAnalytics = async (req, res) => {
-  try {
-    const { period = "all", startDate, endDate } = req.query;
-
-    const totalMembers = await Member.countDocuments();
-
-    let dateFilter = {};
-
-    const now = new Date();
-
-    if (period === "week") {
-      const startOfWeek = new Date(now);
-      const day = startOfWeek.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      startOfWeek.setDate(startOfWeek.getDate() + diff);
-      startOfWeek.setHours(0, 0, 0, 0);
-
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(endOfWeek.getDate() + 6);
-      endOfWeek.setHours(23, 59, 59, 999);
-
-      dateFilter = {
-        date: {
-          $gte: startOfWeek,
-          $lte: endOfWeek,
-        },
-      };
-    } else if (period === "month") {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      endOfMonth.setHours(23, 59, 59, 999);
-
-      dateFilter = {
-        date: {
-          $gte: startOfMonth,
-          $lte: endOfMonth,
-        },
-      };
-    } else if (period === "year") {
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      startOfYear.setHours(0, 0, 0, 0);
-
-      const endOfYear = new Date(now.getFullYear(), 11, 31);
-      endOfYear.setHours(23, 59, 59, 999);
-
-      dateFilter = {
-        date: {
-          $gte: startOfYear,
-          $lte: endOfYear,
-        },
-      };
-    } else if (period === "custom" && startDate && endDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-
-      dateFilter = {
-        date: {
-          $gte: start,
-          $lte: end,
-        },
-      };
-    }
-
-    const events = await Event.find(dateFilter).sort({ date: -1 });
-
-    const eventIds = events.map((event) => event._id);
-
-    const attendanceFilter =
-      eventIds.length > 0 ? { eventId: { $in: eventIds } } : { eventId: null };
-
-    const totalAttendances = await Attendance.countDocuments(attendanceFilter);
-
-    const presentCount = await Attendance.countDocuments({
-      ...attendanceFilter,
-      status: "Présent",
-    });
-
-    const absentCount = await Attendance.countDocuments({
-      ...attendanceFilter,
-      status: "Absent",
-    });
-
-    const excusedCount = await Attendance.countDocuments({
-      ...attendanceFilter,
-      status: "Excusé",
-    });
-
-    const eventsAnalytics = await Promise.all(
-      events.map(async (event) => {
-        const present = await Attendance.countDocuments({
-          eventId: event._id,
-          status: "Présent",
-        });
-
-        const absent = await Attendance.countDocuments({
-          eventId: event._id,
-          status: "Absent",
-        });
-
-        const excused = await Attendance.countDocuments({
-          eventId: event._id,
-          status: "Excusé",
-        });
-
-        const marked = present + absent + excused;
-        const notMarked = Math.max(totalMembers - marked, 0);
-
-        const attendanceRate =
-          totalMembers > 0
-            ? Number(((present / totalMembers) * 100).toFixed(2))
-            : 0;
-
-        return {
-          eventId: event._id,
-          title: event.title,
-          date: event.date,
-          type: event.type || "",
-          status: event.status || "",
-          present,
-          absent,
-          excused,
-          notMarked,
-          attendanceRate,
-        };
-      })
+    console.error(
+      "Erreur getAttendanceSummary :",
+      error
     );
 
-    const bestAttendanceEvent =
-      eventsAnalytics.length > 0
-        ? [...eventsAnalytics].sort(
-            (a, b) => b.attendanceRate - a.attendanceRate
-          )[0]
-        : null;
-
-    res.status(200).json({
-      success: true,
-      data: {
-        period,
-        startDate: startDate || null,
-        endDate: endDate || null,
-        overview: {
-          totalMembers,
-          totalAttendances,
-          presentCount,
-          absentCount,
-          excusedCount,
-        },
-        bestAttendanceEvent,
-        eventsAnalytics,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
+// ======================================================
+// EXPORTS
+// ======================================================
+
 module.exports = {
-  createAttendance,
   markAttendance,
   getAttendances,
+  getAttendancesByEvent,
   getAttendanceById,
   updateAttendance,
   deleteAttendance,
-  getAttendanceByEvent,
-  getAttendanceSummaryByEvent,
-  getAttendanceAnalytics,
+  getAttendanceSummary,
 };

@@ -2,42 +2,70 @@ const mongoose = require("mongoose");
 
 const eventSchema = new mongoose.Schema(
   {
+    church: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Church",
+      default: null,
+      index: true,
+    },
+
     title: {
       type: String,
       required: true,
       trim: true,
     },
+
     type: {
       type: String,
-      enum: ["Culte", "Réunion", "Conférence", "Répétition", "Veillée", "Autre"],
       default: "Autre",
+      trim: true,
     },
+
     description: {
       type: String,
-      trim: true,
       default: "",
+      trim: true,
     },
+
     date: {
       type: Date,
       required: true,
     },
+
     location: {
       type: String,
-      trim: true,
       default: "",
+      trim: true,
     },
+
     leader: {
       type: String,
-      trim: true,
       default: "",
+      trim: true,
     },
+
     status: {
       type: String,
-      enum: ["Prévu", "Terminé", "Annulé"],
-      default: "Prévu",
+      enum: [
+        "À venir",
+        "En cours",
+        "Terminé",
+        "Annulé",
+      ],
+      default: "À venir",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-module.exports = mongoose.model("Event", eventSchema);
+eventSchema.index({
+  church: 1,
+  date: 1,
+});
+
+module.exports = mongoose.model(
+  "Event",
+  eventSchema
+);

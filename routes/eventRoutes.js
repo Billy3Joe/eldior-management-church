@@ -1,13 +1,57 @@
 const express = require("express");
 const router = express.Router();
 
-const protect = require("../middleware/authMiddleware");
-const eventController = require("../controllers/eventController");
+const protect = require(
+  "../middleware/authMiddleware"
+);
 
-router.post("/", protect, eventController.createEvent);
-router.get("/", protect, eventController.getEvents);
-router.get("/:id", protect, eventController.getEventById);
-router.put("/:id", protect, eventController.updateEvent);
-router.delete("/:id", protect, eventController.deleteEvent);
+const requireChurch = require(
+  "../middleware/tenantMiddleware"
+);
+
+const {
+  createEvent,
+  getEvents,
+  getEventById,
+  updateEvent,
+  deleteEvent,
+} = require(
+  "../controllers/eventController"
+);
+
+router.get(
+  "/",
+  protect,
+  requireChurch,
+  getEvents
+);
+
+router.post(
+  "/",
+  protect,
+  requireChurch,
+  createEvent
+);
+
+router.get(
+  "/:id",
+  protect,
+  requireChurch,
+  getEventById
+);
+
+router.put(
+  "/:id",
+  protect,
+  requireChurch,
+  updateEvent
+);
+
+router.delete(
+  "/:id",
+  protect,
+  requireChurch,
+  deleteEvent
+);
 
 module.exports = router;
