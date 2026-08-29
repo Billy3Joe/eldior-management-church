@@ -15,6 +15,13 @@ const authorizeRoles = require(
 );
 
 const {
+  requireActiveSubscription,
+  requireFeature,
+} = require(
+  "../middleware/subscriptionMiddleware"
+);
+
+const {
   createAssignment,
   getAssignments,
   getAssignmentById,
@@ -35,161 +42,143 @@ const {
 );
 
 // ======================================================
-// ROUTES PUBLIQUES
-// ======================================================
-// Ces routes sont utilisées depuis l'email.
-// Elles ne nécessitent ni JWT ni connexion.
+// PUBLIC
 // ======================================================
 
-// Afficher une programmation avec le token
 router.get(
   "/public/:token",
   getPublicAssignment
 );
 
-// Confirmer ou refuser depuis l'email
 router.post(
   "/public/:token/respond",
   respondToAssignment
 );
 
 // ======================================================
-// STATISTIQUES
-// ADMIN + MANAGER
-// IMPORTANT : AVANT /:id
+// STATS
 // ======================================================
 
 router.get(
   "/stats",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  authorizeRoles("admin", "manager"),
   getAssignmentStats
 );
 
 // ======================================================
-// LISTE DES PROGRAMMATIONS
+// LISTE
 // ======================================================
 
 router.get(
   "/",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  authorizeRoles("admin", "manager"),
   getAssignments
 );
 
 // ======================================================
-// CRÉER UNE PROGRAMMATION
+// CRÉATION
 // ======================================================
 
 router.post(
   "/",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  authorizeRoles("admin", "manager"),
   createAssignment
 );
 
 // ======================================================
-// RENVOYER EMAIL
-// IMPORTANT : AVANT /:id
+// RENVOI EMAIL
 // ======================================================
 
 router.post(
   "/:id/resend-email",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  requireFeature("emailNotifications"),
+  authorizeRoles("admin", "manager"),
   resendAssignmentEmail
 );
 
 // ======================================================
-// CONFIRMER MANUELLEMENT
-// ADMIN + MANAGER
+// CONFIRMER
 // ======================================================
 
 router.patch(
   "/:id/confirm",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  authorizeRoles("admin", "manager"),
   confirmAssignment
 );
 
 // ======================================================
-// REFUSER MANUELLEMENT
-// ADMIN + MANAGER
+// REFUSER
 // ======================================================
 
 router.patch(
   "/:id/decline",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  authorizeRoles("admin", "manager"),
   declineAssignment
 );
 
 // ======================================================
-// DÉTAIL D'UNE PROGRAMMATION
+// DÉTAIL
 // ======================================================
 
 router.get(
   "/:id",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  authorizeRoles("admin", "manager"),
   getAssignmentById
 );
 
 // ======================================================
-// MODIFIER UNE PROGRAMMATION
+// MODIFICATION
 // ======================================================
 
 router.put(
   "/:id",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  authorizeRoles("admin", "manager"),
   updateAssignment
 );
 
 // ======================================================
-// SUPPRIMER UNE PROGRAMMATION
+// SUPPRESSION
 // ======================================================
 
 router.delete(
   "/:id",
   protect,
   requireChurch,
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  requireActiveSubscription,
+  requireFeature("assignments"),
+  authorizeRoles("admin", "manager"),
   deleteAssignment
 );
 

@@ -1,49 +1,88 @@
-const mongoose = require("mongoose");
+const mongoose =
+  require("mongoose");
 
-const departmentSchema = new mongoose.Schema(
+const departmentSchema =
+  new mongoose.Schema(
+    {
+      church: {
+        type:
+          mongoose.Schema.Types
+            .ObjectId,
+
+        ref: "Church",
+
+        required: true,
+
+        index: true,
+      },
+
+      name: {
+        type: String,
+
+        required: true,
+
+        trim: true,
+      },
+
+      leader: {
+        type: String,
+
+        default: "",
+
+        trim: true,
+      },
+
+      description: {
+        type: String,
+
+        default: "",
+
+        trim: true,
+      },
+
+      status: {
+        type: String,
+
+        enum: [
+          "active",
+          "inactive",
+        ],
+
+        default:
+          "active",
+
+        index: true,
+      },
+    },
+
+    {
+      timestamps: true,
+    }
+  );
+
+// ======================================================
+// INDEX
+// Empêche deux départements
+// portant exactement le même nom
+// dans une même église
+// ======================================================
+
+departmentSchema.index(
   {
-    church: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Church",
-      default: null,
-      index: true,
-    },
-
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    description: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    leader: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    status: {
-      type: String,
-      enum: ["Actif", "Inactif"],
-      default: "Actif",
-    },
+    church: 1,
+    name: 1,
   },
   {
-    timestamps: true,
+    unique: true,
   }
 );
 
-departmentSchema.index({
-  church: 1,
-  name: 1,
-});
+// ======================================================
+// EXPORT
+// ======================================================
 
-module.exports = mongoose.model(
-  "Department",
-  departmentSchema
-);
+module.exports =
+  mongoose.model(
+    "Department",
+    departmentSchema
+  );

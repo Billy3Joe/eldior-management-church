@@ -2,6 +2,10 @@ const express = require("express");
 
 const router = express.Router();
 
+const User = require(
+  "../models/User"
+);
+
 const protect = require(
   "../middleware/authMiddleware"
 );
@@ -12,6 +16,13 @@ const requireChurch = require(
 
 const authorizeRoles = require(
   "../middleware/roleMiddleware"
+);
+
+const {
+  requireActiveSubscription,
+  enforceResourceLimit,
+} = require(
+  "../middleware/subscriptionMiddleware"
 );
 
 const {
@@ -26,74 +37,86 @@ const {
 );
 
 // ======================================================
-// TOUTES LES ROUTES UTILISATEURS
+// LISTE UTILISATEURS
 // ADMIN UNIQUEMENT
 // ======================================================
 
-// Liste des utilisateurs de l'église
 router.get(
   "/",
   protect,
   requireChurch,
+  requireActiveSubscription,
   authorizeRoles("admin"),
   getUsers
 );
 
-// Créer un utilisateur
+// ======================================================
+// CRÉATION
+// ======================================================
+
 router.post(
   "/",
   protect,
   requireChurch,
+  requireActiveSubscription,
   authorizeRoles("admin"),
+
+  enforceResourceLimit({
+    resource: "users",
+    Model: User,
+  }),
+
   createUser
 );
 
 // ======================================================
-// ROUTES SPÉCIALES
-// AVANT /:id
+// ACTIVER / DÉSACTIVER
 // ======================================================
 
-// Activer / désactiver un utilisateur
 router.patch(
   "/:id/toggle-status",
   protect,
   requireChurch,
+  requireActiveSubscription,
   authorizeRoles("admin"),
   toggleUserStatus
 );
 
 // ======================================================
-// DÉTAIL UTILISATEUR
+// DÉTAIL
 // ======================================================
 
 router.get(
   "/:id",
   protect,
   requireChurch,
+  requireActiveSubscription,
   authorizeRoles("admin"),
   getUserById
 );
 
 // ======================================================
-// MODIFIER UTILISATEUR
+// MODIFICATION
 // ======================================================
 
 router.put(
   "/:id",
   protect,
   requireChurch,
+  requireActiveSubscription,
   authorizeRoles("admin"),
   updateUser
 );
 
 // ======================================================
-// SUPPRIMER UTILISATEUR
+// SUPPRESSION
 // ======================================================
 
 router.delete(
   "/:id",
   protect,
   requireChurch,
+  requireActiveSubscription,
   authorizeRoles("admin"),
   deleteUser
 );

@@ -1,75 +1,79 @@
 const jwt = require("jsonwebtoken");
+
 const User = require("../models/User");
 
-const protect = async (
-  req,
-  res,
-  next
-) => {
+// ======================================================
+// AUTHENTIFICATION
+// ======================================================
+
+const protect = async (req, res, next) => {
   try {
+    let token = null;
+
+    // ==================================================
+    // RÉCUPÉRATION DU TOKEN
+    // ==================================================
+
     const authHeader =
       req.headers.authorization;
 
-    if (!authHeader) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Aucun token fourni",
-      });
-    }
-
     if (
-      !authHeader.startsWith(
-        "Bearer "
-      )
+      authHeader &&
+      authHeader.startsWith("Bearer ")
     ) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Format Authorization invalide",
-      });
+      token =
+        authHeader.split(" ")[1];
     }
-
-    const token =
-      authHeader.split(" ")[1];
 
     if (!token) {
       return res.status(401).json({
         success: false,
         message:
-          "Token manquant",
+          "Accès refusé. Token d'authentification manquant.",
       });
     }
 
-    const decoded =
-      jwt.verify(
+    // ==================================================
+    // VÉRIFICATION JWT
+    // ==================================================
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(
         token,
         process.env.JWT_SECRET
       );
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Token invalide ou expiré",
+      });
+    }
 
-    console.log(
-      "TOKEN DECODED :",
-      decoded
-    );
+    // ==================================================
+    // UTILISATEUR
+    // ==================================================
 
-    const user =
-      await User.findById(decoded.id)
-        .select("-password")
-        .populate(
-          "church",
-          "name slug plan status isActive"
-        );
-
-    console.log(
-      "USER TROUVÉ :",
-      user
-    );
+    const user = await User.findById(
+      decoded.id
+    )
+      .select("-password")
+      .populate(
+        "church",
+        "name slug plan status isActive"
+      )
+      .populate(
+        "churchMemberships.church",
+        "name slug plan status isActive"
+      );
 
     if (!user) {
       return res.status(401).json({
         success: false,
         message:
-          "Utilisateur non autorisé",
+          "Utilisateur introuvable",
       });
     }
 
@@ -81,65 +85,79 @@ const protect = async (
       });
     }
 
-    if (
-      user.church &&
-      user.church.isActive === false
-    ) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Organisation désactivée",
-      });
-    }
-
-    if (
-      user.church &&
-      ["suspended", "cancelled"].includes(
-        user.church.status
-      )
-    ) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Accès à l'organisation suspendu",
-      });
-    }
+    // ==================================================
+    // INFORMATIONS UTILISATEUR
+    // ==================================================
 
     req.user = user;
 
+    // Rôle plateforme
+    req.platformRole =
+      user.platformRole || "user";
+
+    // Rôle dans l'église
+    req.churchRole =
+      user.role || "member";
+
     // ==================================================
-    // CHURCH ID PROPRE
+    // ÉGLISE ACTIVE
     // ==================================================
 
-    if (user.church?._id) {
-      req.churchId =
-        user.church._id.toString();
-    } else if (decoded.churchId) {
-      req.churchId =
-        decoded.churchId;
+    if (user.church) {
+      if (user.church._id) {
+        req.churchId =
+          user.church._id.toString();
+      } else {
+        req.churchId =
+          user.church.toString();
+      }
     } else {
-      req.churchId =
-        null;
+      req.churchId = null;
     }
 
-    console.log(
-      "CHURCH ID :",
-      req.churchId
-    );
+    // ==================================================
+    // INFORMATIONS JWT
+    // ==================================================
+
+    req.auth = {
+      userId:
+        user._id.toString(),
+
+      platformRole:
+        user.platformRole || "user",
+
+      role:
+        user.role || "member",
+
+      churchId:
+        req.churchId,
+    };
 
     next();
   } catch (error) {
     console.error(
-      "Erreur authMiddleware :",
-      error.message
+      "AUTH MIDDLEWARE ERROR:",
+      error
     );
 
-    return res.status(401).json({
+    return res.status(500).json({
       success: false,
       message:
-        "Token invalide ou expiré",
+        "Erreur lors de l'authentification",
+      error:
+        error.message,
     });
   }
 };
 
+// ======================================================
+// EXPORT COMPATIBLE AVEC LES ANCIENS FICHIERS
+// ======================================================
+
+// Ancienne syntaxe :
+// const protect = require("../middleware/authMiddleware");
 module.exports = protect;
+
+// Nouvelle syntaxe :
+// const { protect } = require("../middleware/authMiddleware");
+module.exports.protect = protect;

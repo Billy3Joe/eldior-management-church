@@ -2,9 +2,29 @@ const express = require("express");
 
 const router = express.Router();
 
-const protect = require("../middleware/authMiddleware");
-const requireChurch = require("../middleware/tenantMiddleware");
-const authorizeRoles = require("../middleware/roleMiddleware");
+const Member = require(
+  "../models/Member"
+);
+
+const protect = require(
+  "../middleware/authMiddleware"
+);
+
+const requireChurch = require(
+  "../middleware/tenantMiddleware"
+);
+
+const authorizeRoles = require(
+  "../middleware/roleMiddleware"
+);
+
+const {
+  requireActiveSubscription,
+  requireFeature,
+  enforceResourceLimit,
+} = require(
+  "../middleware/subscriptionMiddleware"
+);
 
 const {
   createMember,
@@ -12,48 +32,95 @@ const {
   getMemberById,
   updateMember,
   deleteMember,
-} = require("../controllers/memberController");
+} = require(
+  "../controllers/memberController"
+);
 
-// Lecture admin + manager
+// ======================================================
+// LISTE
+// ======================================================
+
 router.get(
   "/",
   protect,
   requireChurch,
-  authorizeRoles("admin", "manager"),
+  requireActiveSubscription,
+  requireFeature("members"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   getMembers
 );
 
-router.get(
-  "/:id",
-  protect,
-  requireChurch,
-  authorizeRoles("admin", "manager"),
-  getMemberById
-);
+// ======================================================
+// CRÉATION
+// ======================================================
 
-// Création admin + manager
 router.post(
   "/",
   protect,
   requireChurch,
-  authorizeRoles("admin", "manager"),
+  requireActiveSubscription,
+  requireFeature("members"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+
+  enforceResourceLimit({
+    resource: "members",
+    Model: Member,
+  }),
+
   createMember
 );
 
-// Modification admin + manager
+// ======================================================
+// DÉTAIL
+// ======================================================
+
+router.get(
+  "/:id",
+  protect,
+  requireChurch,
+  requireActiveSubscription,
+  requireFeature("members"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  getMemberById
+);
+
+// ======================================================
+// MODIFICATION
+// ======================================================
+
 router.put(
   "/:id",
   protect,
   requireChurch,
-  authorizeRoles("admin", "manager"),
+  requireActiveSubscription,
+  requireFeature("members"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   updateMember
 );
 
-// Suppression admin uniquement
+// ======================================================
+// SUPPRESSION
+// ADMIN UNIQUEMENT
+// ======================================================
+
 router.delete(
   "/:id",
   protect,
   requireChurch,
+  requireActiveSubscription,
+  requireFeature("members"),
   authorizeRoles("admin"),
   deleteMember
 );

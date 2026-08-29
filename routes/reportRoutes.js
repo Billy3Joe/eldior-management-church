@@ -10,6 +10,17 @@ const requireChurch = require(
   "../middleware/tenantMiddleware"
 );
 
+const authorizeRoles = require(
+  "../middleware/roleMiddleware"
+);
+
+const {
+  requireActiveSubscription,
+  requireFeature,
+} = require(
+  "../middleware/subscriptionMiddleware"
+);
+
 const {
   getGlobalReport,
   getEventReport,
@@ -17,17 +28,25 @@ const {
   "../controllers/reportController"
 );
 
+// Rapport global
 router.get(
   "/",
   protect,
   requireChurch,
+  requireActiveSubscription,
+  requireFeature("reports"),
+  authorizeRoles("admin", "manager"),
   getGlobalReport
 );
 
+// Rapport événement
 router.get(
   "/event/:eventId",
   protect,
   requireChurch,
+  requireActiveSubscription,
+  requireFeature("reports"),
+  authorizeRoles("admin", "manager"),
   getEventReport
 );
 

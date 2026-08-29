@@ -15,35 +15,37 @@ const authorizeRoles = require(
 );
 
 const {
+  requireActiveSubscription,
+  requireFeature,
+} = require(
+  "../middleware/subscriptionMiddleware"
+);
+
+const {
   getActivityLogs,
   clearActivityLogs,
 } = require(
   "../controllers/activityLogController"
 );
 
-// ======================================================
-// JOURNAL D'ACTIVITÉ
-// ADMIN UNIQUEMENT
-// ======================================================
-
-// Lire le journal
+// Lecture
 router.get(
   "/",
   protect,
   requireChurch,
+  requireActiveSubscription,
+  requireFeature("activityLogs"),
   authorizeRoles("admin"),
   getActivityLogs
 );
 
-// ======================================================
-// VIDER LE JOURNAL
-// ADMIN UNIQUEMENT
-// ======================================================
-
+// Suppression complète
 router.delete(
   "/",
   protect,
   requireChurch,
+  requireActiveSubscription,
+  requireFeature("activityLogs"),
   authorizeRoles("admin"),
   clearActivityLogs
 );

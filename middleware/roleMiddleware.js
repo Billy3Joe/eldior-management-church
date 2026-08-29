@@ -1,5 +1,11 @@
-const authorizeRoles = (...roles) => {
-  return (req, res, next) => {
+const authorizeRoles = (
+  ...roles
+) => {
+  return (
+    req,
+    res,
+    next
+  ) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -8,9 +14,24 @@ const authorizeRoles = (...roles) => {
       });
     }
 
+    // ==================================================
+    // LE SUPERADMIN PLATEFORME A TOUS LES DROITS
+    // ==================================================
+
+    if (
+      req.user.platformRole ===
+      "superadmin"
+    ) {
+      return next();
+    }
+
+    const currentRole =
+      req.churchRole ||
+      req.user.role;
+
     if (
       !roles.includes(
-        req.user.role
+        currentRole
       )
     ) {
       return res.status(403).json({
@@ -24,4 +45,5 @@ const authorizeRoles = (...roles) => {
   };
 };
 
-module.exports = authorizeRoles;
+module.exports =
+  authorizeRoles;

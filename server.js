@@ -1,11 +1,9 @@
 // ======================================================
 // VARIABLES D'ENVIRONNEMENT
-// IMPORTANT : charger AVANT les autres imports
+// IMPORTANT : dotenv doit être chargé en premier
 // ======================================================
 
-const dotenv = require("dotenv");
-
-dotenv.config();
+require("dotenv").config();
 
 // ======================================================
 // IMPORTS
@@ -16,15 +14,20 @@ const cors = require("cors");
 
 const connectDB = require("./config/db");
 
-const startAssignmentReminderJob = require(
-  "./jobs/assignmentReminderJob"
-);
+// ======================================================
+// MODÈLES IMPORTÉS EXPLICITEMENT
+// ======================================================
 
-// Enregistrement explicite de certains modèles utilisés
-// avec populate()
 require("./models/Church");
 require("./models/User");
 require("./models/ChurchSettings");
+
+// ======================================================
+// SCHEDULER DES RAPPELS
+// ======================================================
+
+const startAssignmentReminderJob =
+  require("./jobs/assignmentReminderJob");
 
 // ======================================================
 // APPLICATION EXPRESS
@@ -36,30 +39,30 @@ const app = express();
 // MIDDLEWARES GLOBAUX
 // ======================================================
 
+app.use(cors());
+
 app.use(
-  cors({
-    origin: true,
-    credentials: true,
+  express.json({
+    limit: "10mb",
   })
 );
-
-app.use(express.json());
 
 app.use(
   express.urlencoded({
     extended: true,
+    limit: "10mb",
   })
 );
 
 // ======================================================
-// ROUTE PRINCIPALE / TEST API
+// ROUTE DE TEST
 // ======================================================
 
 app.get("/", (req, res) => {
   return res.status(200).json({
     success: true,
-    message: "API ElDior Management Church en ligne",
-    version: "1.0.0",
+    message:
+      "API ElDior Management Church opérationnelle",
   });
 });
 
@@ -109,7 +112,7 @@ app.use(
 );
 
 // ======================================================
-// PROGRAMMATIONS
+// PROGRAMMATIONS / AFFECTATIONS
 // ======================================================
 
 app.use(
@@ -118,7 +121,7 @@ app.use(
 );
 
 // ======================================================
-// DASHBOARD
+// DASHBOARD ÉGLISE
 // ======================================================
 
 app.use(
@@ -136,7 +139,7 @@ app.use(
 );
 
 // ======================================================
-// UTILISATEURS / ADMINS / MANAGERS
+// UTILISATEURS D'UNE ÉGLISE
 // ======================================================
 
 app.use(
@@ -163,13 +166,33 @@ app.use(
 );
 
 // ======================================================
+// ABONNEMENT DE L'ÉGLISE
+// ======================================================
+
+app.use(
+  "/api/subscription",
+  require("./routes/subscriptionRoutes")
+);
+
+// ======================================================
+// ESPACE SUPER ADMIN / PROPRIÉTAIRE ELDIOR
+// ======================================================
+
+app.use(
+  "/api/platform",
+  require("./routes/platformRoutes")
+);
+
+// ======================================================
 // ROUTE 404
+// IMPORTANT : DOIT RESTER APRÈS TOUTES LES ROUTES API
 // ======================================================
 
 app.use((req, res) => {
   return res.status(404).json({
     success: false,
-    message: `Route API introuvable : ${req.method} ${req.originalUrl}`,
+    message:
+      `Route API introuvable : ${req.method} ${req.originalUrl}`,
   });
 });
 
@@ -177,18 +200,37 @@ app.use((req, res) => {
 // GESTION GLOBALE DES ERREURS
 // ======================================================
 
-app.use((err, req, res, next) => {
-  console.error("❌ Erreur serveur :", err);
+app.use(
+  (
+    err,
+    req,
+    res,
+    next
+  ) => {
+    console.error(
+      "❌ ERREUR SERVEUR :",
+      err
+    );
 
-  return res.status(
-    err.status || 500
-  ).json({
-    success: false,
-    message:
-      err.message ||
-      "Une erreur interne est survenue",
-  });
-});
+    return res.status(
+      err.status || 500
+    ).json({
+      success: false,
+
+      message:
+        err.message ||
+        "Erreur interne du serveur",
+
+      ...(process.env.NODE_ENV ===
+      "development"
+        ? {
+            stack:
+              err.stack,
+          }
+        : {}),
+    });
+  }
+);
 
 // ======================================================
 // PORT
@@ -199,78 +241,114 @@ const PORT =
   8000;
 
 // ======================================================
-// DÉMARRAGE
+// DÉMARRAGE DU SERVEUR
 // ======================================================
 
-const startServer = async () => {
-  try {
-    // ================================================
-    // 1. CONNEXION MONGODB
-    // ================================================
+const startServer =
+  async () => {
+    try {
+      // ==================================================
+      // CONNEXION MONGODB
+      // ==================================================
 
-    await connectDB();
+      await connectDB();
 
-    // ================================================
-    // 2. SERVEUR HTTP
-    // ================================================
-
-    const server = app.listen(
-      PORT,
-      () => {
-        console.log(
-          `🚀 Serveur lancé sur le port ${PORT}`
-        );
-
-        console.log(
-          `🌐 API : http://localhost:${PORT}`
-        );
-
-        // ============================================
-        // 3. SCHEDULER MULTI-ÉGLISES
-        // ============================================
-
-        startAssignmentReminderJob();
-      }
-    );
-
-    // ================================================
-    // ARRÊT PROPRE
-    // ================================================
-
-    const shutdown = (signal) => {
       console.log(
-        `\n🛑 Signal ${signal} reçu`
+        "✅ Connexion MongoDB établie"
       );
 
-      server.close(() => {
-        console.log(
-          "✅ Serveur HTTP arrêté"
+      // ==================================================
+      // DÉMARRAGE HTTP
+      // ==================================================
+
+      const server =
+        app.listen(
+          PORT,
+          () => {
+            console.log(
+              `🚀 Serveur lancé sur le port ${PORT}`
+            );
+
+            console.log(
+              `🌐 API : http://localhost:${PORT}`
+            );
+
+            // ==========================================
+            // SCHEDULER MULTI-ÉGLISES
+            // ==========================================
+
+            try {
+              startAssignmentReminderJob();
+
+              console.log(
+                "⏰ Scheduler des rappels lancé"
+              );
+            } catch (error) {
+              console.error(
+                "❌ Erreur lancement scheduler :",
+                error
+              );
+            }
+          }
         );
 
-        process.exit(0);
-      });
-    };
+      // ==================================================
+      // ARRÊT PROPRE
+      // ==================================================
 
-    process.on(
-      "SIGINT",
-      () =>
-        shutdown("SIGINT")
-    );
+      const shutdown =
+        (signal) => {
+          console.log(
+            `\n🛑 Signal ${signal} reçu`
+          );
 
-    process.on(
-      "SIGTERM",
-      () =>
-        shutdown("SIGTERM")
-    );
-  } catch (error) {
-    console.error(
-      "❌ Impossible de démarrer ElDior Management Church :",
-      error
-    );
+          server.close(
+            () => {
+              console.log(
+                "✅ Serveur HTTP arrêté"
+              );
 
-    process.exit(1);
-  }
-};
+              process.exit(0);
+            }
+          );
+        };
+
+      process.on(
+        "SIGINT",
+        () => {
+          shutdown("SIGINT");
+        }
+      );
+
+      process.on(
+        "SIGTERM",
+        () => {
+          shutdown("SIGTERM");
+        }
+      );
+
+      // ==================================================
+      // PROMESSES NON GÉRÉES
+      // ==================================================
+
+      process.on(
+        "unhandledRejection",
+        (error) => {
+          console.error(
+            "❌ Promesse non gérée :",
+            error
+          );
+        }
+      );
+    } catch (error) {
+      console.error(
+        "❌ Impossible de démarrer le serveur :",
+        error
+      );
+
+      process.exit(1);
+    }
+  };
 
 // ======================================================
 // LANCEMENT

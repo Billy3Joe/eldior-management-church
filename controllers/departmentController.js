@@ -3,32 +3,21 @@ const mongoose = require("mongoose");
 const Department = require("../models/Department");
 const Member = require("../models/Member");
 
-const createActivityLog = require(
-  "../utils/createActivityLog"
-);
-
 // ======================================================
-// CRÉER
+// CRÉER UN DÉPARTEMENT
+// POST /api/departments
 // ======================================================
 
 const createDepartment = async (req, res) => {
   try {
     const {
       name,
-      description,
       leader,
       status,
+      description,
     } = req.body;
 
-    if (!req.churchId) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Aucune église associée à cet utilisateur",
-      });
-    }
-
-    if (!name?.trim()) {
+    if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
         message:
@@ -36,12 +25,16 @@ const createDepartment = async (req, res) => {
       });
     }
 
+    // Vérifier si le département existe déjà
+    // dans la même église
     const existingDepartment =
       await Department.findOne({
         church: req.churchId,
         name: {
-          $regex: `^${name.trim()}$`,
-          $options: "i",
+          $regex: new RegExp(
+            `^${name.trim()}$`,
+            "i"
+          ),
         },
       });
 
@@ -49,30 +42,29 @@ const createDepartment = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Ce département existe déjà dans cette église",
+          "Un département avec ce nom existe déjà",
       });
     }
 
     const department =
       await Department.create({
         church: req.churchId,
-        name: name.trim(),
-        description:
-          description?.trim() || "",
-        leader:
-          leader?.trim() || "",
-        status:
-          status || "Actif",
-      });
 
-    await createActivityLog({
-      req,
-      action: "CREATE",
-      entity: "Department",
-      entityId: department._id,
-      description:
-        `Création du département ${department.name}`,
-    });
+        name: name.trim(),
+
+        leader:
+          typeof leader === "string"
+            ? leader.trim()
+            : leader || "",
+
+        description:
+          typeof description === "string"
+            ? description.trim()
+            : description || "",
+
+        status:
+          status || "active",
+      });
 
     return res.status(201).json({
       success: true,
@@ -88,92 +80,120 @@ const createDepartment = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        "Erreur lors de la création du département",
+      error:
+        process.env.NODE_ENV ===
+        "development"
+          ? error.message
+          : undefined,
     });
   }
 };
 
 // ======================================================
-// LISTE
+// LISTE DES DÉPARTEMENTS
+// GET /api/departments
 // ======================================================
 
-const getDepartments = async (req, res) => {
+const getDepartments = async (
+  req,
+  res
+) => {
   try {
-    if (!req.churchId) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Aucune église associée à cet utilisateur",
-      });
-    }
-
-    const page =
-      parseInt(req.query.page, 10) || 1;
-
-    const limit =
-      parseInt(req.query.limit, 10) || 10;
-
-    const skip =
-      (page - 1) * limit;
-
     const {
-      search,
-      status,
+      search = "",
+      status = "",
+      page = 1,
+      limit = 20,
     } = req.query;
+
+    const numericPage =
+      Math.max(
+        parseInt(page, 10) || 1,
+        1
+      );
+
+    const numericLimit =
+      Math.min(
+        Math.max(
+          parseInt(limit, 10) || 20,
+          1
+        ),
+        1000
+      );
 
     const filter = {
       church: req.churchId,
     };
 
-    if (status) {
-      filter.status = status;
-    }
-
-    if (search) {
+    // Recherche
+    if (search.trim()) {
       filter.$or = [
         {
           name: {
-            $regex: search,
-            $options: "i",
-          },
-        },
-        {
-          description: {
-            $regex: search,
+            $regex: search.trim(),
             $options: "i",
           },
         },
         {
           leader: {
-            $regex: search,
+            $regex: search.trim(),
             $options: "i",
           },
         },
       ];
     }
 
-    const total =
-      await Department.countDocuments(filter);
+    // Filtre statut
+    if (status) {
+      filter.status = status;
+    }
 
-    const departments =
-      await Department.find(filter)
+    const skip =
+      (numericPage - 1) *
+      numericLimit;
+
+    const [
+      departments,
+      total,
+    ] = await Promise.all([
+      Department.find(filter)
         .sort({
           createdAt: -1,
         })
         .skip(skip)
-        .limit(limit);
+        .limit(numericLimit)
+        .lean(),
+
+      Department.countDocuments(
+        filter
+      ),
+    ]);
+
+    const totalPages =
+      Math.max(
+        Math.ceil(
+          total / numericLimit
+        ),
+        1
+      );
 
     return res.status(200).json({
       success: true,
-      page,
-      limit,
+
+      data: departments,
+
+      // Compatibilité frontend
+      departments,
+
+      page: numericPage,
+
+      limit: numericLimit,
+
       total,
-      totalPages:
-        Math.ceil(total / limit),
-      count:
-        departments.length,
-      data:
-        departments,
+
+      totalPages,
     });
   } catch (error) {
     console.error(
@@ -183,278 +203,575 @@ const getDepartments = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ======================================================
-// DÉTAIL
-// ======================================================
-
-const getDepartmentById = async (
-  req,
-  res
-) => {
-  try {
-    const { id } = req.params;
-
-    if (
-      !mongoose.Types.ObjectId.isValid(id)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "ID département invalide",
-      });
-    }
-
-    const department =
-      await Department.findOne({
-        _id: id,
-        church: req.churchId,
-      });
-
-    if (!department) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Département introuvable",
-      });
-    }
-
-    const membersCount =
-      await Member.countDocuments({
-        church: req.churchId,
-        department: department._id,
-      });
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        ...department.toObject(),
-        membersCount,
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// ======================================================
-// MODIFIER
-// ======================================================
-
-const updateDepartment = async (
-  req,
-  res
-) => {
-  try {
-    const { id } = req.params;
-
-    if (
-      !mongoose.Types.ObjectId.isValid(id)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "ID département invalide",
-      });
-    }
-
-    const department =
-      await Department.findOne({
-        _id: id,
-        church: req.churchId,
-      });
-
-    if (!department) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Département introuvable",
-      });
-    }
-
-    const {
-      name,
-      description,
-      leader,
-      status,
-    } = req.body;
-
-    if (
-      typeof name !== "undefined"
-    ) {
-      if (!name.trim()) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Le nom du département ne peut pas être vide",
-        });
-      }
-
-      const duplicate =
-        await Department.findOne({
-          _id: {
-            $ne: department._id,
-          },
-          church: req.churchId,
-          name: {
-            $regex: `^${name.trim()}$`,
-            $options: "i",
-          },
-        });
-
-      if (duplicate) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Un autre département porte déjà ce nom",
-        });
-      }
-
-      department.name =
-        name.trim();
-    }
-
-    if (
-      typeof description !==
-      "undefined"
-    ) {
-      department.description =
-        description.trim();
-    }
-
-    if (
-      typeof leader !==
-      "undefined"
-    ) {
-      department.leader =
-        leader.trim();
-    }
-
-    if (
-      typeof status !==
-      "undefined"
-    ) {
-      department.status =
-        status;
-    }
-
-    await department.save();
-
-    await createActivityLog({
-      req,
-      action: "UPDATE",
-      entity: "Department",
-      entityId: department._id,
-      description:
-        `Modification du département ${department.name}`,
-    });
-
-    return res.status(200).json({
-      success: true,
       message:
-        "Département mis à jour avec succès",
-      data: department,
-    });
-  } catch (error) {
-    console.error(
-      "Erreur updateDepartment :",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message: error.message,
+        "Erreur lors du chargement des départements",
+      error:
+        process.env.NODE_ENV ===
+        "development"
+          ? error.message
+          : undefined,
     });
   }
 };
 
 // ======================================================
-// SUPPRIMER
+// STATISTIQUES DE TOUS LES DÉPARTEMENTS
+// GET /api/departments/stats/all
 // ======================================================
 
-const deleteDepartment = async (
+const getDepartmentStats = async (
   req,
   res
 ) => {
   try {
-    const { id } = req.params;
+    const churchId =
+      new mongoose.Types.ObjectId(
+        req.churchId
+      );
 
-    if (
-      !mongoose.Types.ObjectId.isValid(id)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "ID département invalide",
-      });
-    }
-
-    const department =
-      await Department.findOne({
-        _id: id,
+    // Tous les départements de l'église
+    const departments =
+      await Department.find({
         church: req.churchId,
-      });
+      })
+        .sort({
+          name: 1,
+        })
+        .lean();
 
-    if (!department) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Département introuvable",
-      });
-    }
+    // Statistiques des membres groupées
+    // par département
+    const memberStats =
+      await Member.aggregate([
+        {
+          $match: {
+            church: churchId,
 
-    // Retirer le département des membres
-    // avant suppression.
-    await Member.updateMany(
-      {
-        church: req.churchId,
-        department: department._id,
-      },
-      {
-        $set: {
-          department: null,
+            department: {
+              $ne: null,
+            },
+          },
         },
+
+        {
+          $group: {
+            _id: "$department",
+
+            totalMembers: {
+              $sum: 1,
+            },
+
+            activeMembers: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$status",
+                      "active",
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+
+            inactiveMembers: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$status",
+                      "inactive",
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]);
+
+    // Transformer les statistiques
+    // en Map pour les retrouver rapidement
+    const statsMap = new Map();
+
+    memberStats.forEach(
+      (item) => {
+        statsMap.set(
+          item._id?.toString(),
+          {
+            totalMembers:
+              item.totalMembers || 0,
+
+            activeMembers:
+              item.activeMembers || 0,
+
+            inactiveMembers:
+              item.inactiveMembers ||
+              0,
+          }
+        );
       }
     );
 
-    const departmentName =
-      department.name;
+    // Fusion départements + statistiques
+    const data =
+      departments.map(
+        (department) => {
+          const departmentStats =
+            statsMap.get(
+              department._id.toString()
+            ) || {
+              totalMembers: 0,
+              activeMembers: 0,
+              inactiveMembers: 0,
+            };
 
-    await department.deleteOne();
+          return {
+            _id:
+              department._id,
 
-    await createActivityLog({
-      req,
-      action: "DELETE",
-      entity: "Department",
-      entityId: id,
-      description:
-        `Suppression du département ${departmentName}`,
-    });
+            name:
+              department.name,
+
+            leader:
+              department.leader ||
+              "",
+
+            status:
+              department.status ||
+              "active",
+
+            totalMembers:
+              departmentStats.totalMembers,
+
+            activeMembers:
+              departmentStats.activeMembers,
+
+            inactiveMembers:
+              departmentStats.inactiveMembers,
+          };
+        }
+      );
+
+    // ==================================================
+    // RÉSUMÉ
+    // ==================================================
+
+    const totalDepartments =
+      departments.length;
+
+    const activeDepartments =
+      departments.filter(
+        (department) =>
+          department.status ===
+          "active"
+      ).length;
+
+    const inactiveDepartments =
+      departments.filter(
+        (department) =>
+          department.status ===
+          "inactive"
+      ).length;
+
+    const totalMembers =
+      data.reduce(
+        (total, department) =>
+          total +
+          department.totalMembers,
+        0
+      );
+
+    const activeMembers =
+      data.reduce(
+        (total, department) =>
+          total +
+          department.activeMembers,
+        0
+      );
+
+    const inactiveMembers =
+      data.reduce(
+        (total, department) =>
+          total +
+          department.inactiveMembers,
+        0
+      );
 
     return res.status(200).json({
       success: true,
-      message:
-        "Département supprimé avec succès",
+
+      data,
+
+      // Compatibilité supplémentaire
+      departments: data,
+
+      summary: {
+        totalDepartments,
+
+        activeDepartments,
+
+        inactiveDepartments,
+
+        totalMembers,
+
+        activeMembers,
+
+        inactiveMembers,
+      },
     });
   } catch (error) {
     console.error(
-      "Erreur deleteDepartment :",
+      "Erreur getDepartmentStats :",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        "Erreur lors du chargement des statistiques des départements",
+      error:
+        process.env.NODE_ENV ===
+        "development"
+          ? error.message
+          : undefined,
     });
   }
 };
+
+// ======================================================
+// RÉCUPÉRER UN DÉPARTEMENT
+// GET /api/departments/:id
+// ======================================================
+
+const getDepartmentById =
+  async (req, res) => {
+    try {
+      const {
+        id,
+      } = req.params;
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Identifiant du département invalide",
+          });
+      }
+
+      const department =
+        await Department.findOne({
+          _id: id,
+          church:
+            req.churchId,
+        }).lean();
+
+      if (!department) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Département introuvable",
+          });
+      }
+
+      const memberCount =
+        await Member.countDocuments({
+          church:
+            req.churchId,
+
+          department:
+            department._id,
+        });
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          data: {
+            ...department,
+
+            totalMembers:
+              memberCount,
+          },
+        });
+    } catch (error) {
+      console.error(
+        "Erreur getDepartmentById :",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message:
+            "Erreur lors du chargement du département",
+        });
+    }
+  };
+
+// ======================================================
+// MODIFIER UN DÉPARTEMENT
+// PUT /api/departments/:id
+// ======================================================
+
+const updateDepartment =
+  async (req, res) => {
+    try {
+      const {
+        id,
+      } = req.params;
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Identifiant du département invalide",
+          });
+      }
+
+      const department =
+        await Department.findOne({
+          _id: id,
+          church:
+            req.churchId,
+        });
+
+      if (!department) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Département introuvable",
+          });
+      }
+
+      const {
+        name,
+        leader,
+        status,
+        description,
+      } = req.body;
+
+      // Vérification nom déjà utilisé
+      if (
+        name &&
+        name.trim() !==
+          department.name
+      ) {
+        const duplicate =
+          await Department.findOne({
+            church:
+              req.churchId,
+
+            _id: {
+              $ne: id,
+            },
+
+            name: {
+              $regex:
+                new RegExp(
+                  `^${name.trim()}$`,
+                  "i"
+                ),
+            },
+          });
+
+        if (duplicate) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+              message:
+                "Un département avec ce nom existe déjà",
+            });
+        }
+      }
+
+      if (name !== undefined) {
+        department.name =
+          name.trim();
+      }
+
+      if (leader !== undefined) {
+        department.leader =
+          typeof leader ===
+          "string"
+            ? leader.trim()
+            : leader;
+      }
+
+      if (
+        description !==
+        undefined
+      ) {
+        department.description =
+          typeof description ===
+          "string"
+            ? description.trim()
+            : description;
+      }
+
+      if (status !== undefined) {
+        department.status =
+          status;
+      }
+
+      const updatedDepartment =
+        await department.save();
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Département mis à jour avec succès",
+
+          data:
+            updatedDepartment,
+        });
+    } catch (error) {
+      console.error(
+        "Erreur updateDepartment :",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Erreur lors de la modification du département",
+
+          error:
+            process.env
+              .NODE_ENV ===
+            "development"
+              ? error.message
+              : undefined,
+        });
+    }
+  };
+
+// ======================================================
+// SUPPRIMER UN DÉPARTEMENT
+// DELETE /api/departments/:id
+// ======================================================
+
+const deleteDepartment =
+  async (req, res) => {
+    try {
+      const {
+        id,
+      } = req.params;
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Identifiant du département invalide",
+          });
+      }
+
+      const department =
+        await Department.findOne({
+          _id: id,
+          church:
+            req.churchId,
+        });
+
+      if (!department) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Département introuvable",
+          });
+      }
+
+      // Vérifie si des membres
+      // sont encore attachés
+      const memberCount =
+        await Member.countDocuments({
+          church:
+            req.churchId,
+
+          department:
+            department._id,
+        });
+
+      if (memberCount > 0) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              `Impossible de supprimer ce département : ${memberCount} membre(s) y sont encore rattaché(s).`,
+          });
+      }
+
+      await Department.deleteOne({
+        _id:
+          department._id,
+
+        church:
+          req.churchId,
+      });
+
+      return res
+        .status(200)
+        .json({
+          success: true,
+
+          message:
+            "Département supprimé avec succès",
+        });
+    } catch (error) {
+      console.error(
+        "Erreur deleteDepartment :",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
+          success: false,
+
+          message:
+            "Erreur lors de la suppression du département",
+        });
+    }
+  };
 
 // ======================================================
 // EXPORTS
@@ -463,6 +780,7 @@ const deleteDepartment = async (
 module.exports = {
   createDepartment,
   getDepartments,
+  getDepartmentStats,
   getDepartmentById,
   updateDepartment,
   deleteDepartment,
