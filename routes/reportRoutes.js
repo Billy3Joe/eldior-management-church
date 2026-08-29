@@ -11,16 +11,24 @@ const requireChurch = require(
 );
 
 const {
-  getDashboard,
+  getGlobalReport,
+  getEventReport,
 } = require(
-  "../controllers/dashboardController"
+  "../controllers/reportController"
 );
 
 router.get(
   "/",
   protect,
   requireChurch,
-  getDashboard
+  getGlobalReport
+);
+
+router.get(
+  "/event/:eventId",
+  protect,
+  requireChurch,
+  getEventReport
 );
 
 module.exports = router;

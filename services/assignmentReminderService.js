@@ -2,6 +2,7 @@ const Assignment = require("../models/Assignment");
 const ChurchSettings = require("../models/ChurchSettings");
 
 const sendEmail = require("../utils/sendEmail");
+
 const assignmentEmailTemplate = require(
   "../utils/assignmentEmailTemplate"
 );
@@ -56,6 +57,42 @@ const reminderAlreadySentToday = (
 };
 
 // ======================================================
+// RÉCUPÉRER LES PARAMÈTRES D'UNE ÉGLISE
+// ======================================================
+
+const getChurchSettings = async (churchId) => {
+  if (!churchId) {
+    return null;
+  }
+
+  let settings =
+    await ChurchSettings.findOne({
+      church: churchId,
+    });
+
+  if (!settings) {
+    settings =
+      await ChurchSettings.create({
+        church: churchId,
+
+        reminderEnabled: true,
+
+        reminderDays: [2, 1],
+
+        reminderHour: 9,
+
+        timezone:
+          "Europe/Paris",
+
+        emailNotificationsEnabled:
+          true,
+      });
+  }
+
+  return settings;
+};
+
+// ======================================================
 // ENVOYER UN RAPPEL
 // ======================================================
 
@@ -63,14 +100,23 @@ const sendReminder = async (
   assignment,
   daysBefore
 ) => {
-  const member = assignment.member;
-  const event = assignment.event;
-  const department = assignment.department;
+  const member =
+    assignment.member;
+
+  const event =
+    assignment.event;
+
+  const department =
+    assignment.department;
+
+  const church =
+    assignment.church;
 
   if (!member?.email) {
     console.log(
-      `Rappel ignoré : aucun email pour ${
-        member?.firstName || "le membre"
+      `⚠️ Rappel ignoré : aucun email pour ${
+        member?.firstName ||
+        "le membre"
       }`
     );
 
@@ -79,7 +125,7 @@ const sendReminder = async (
 
   if (!assignment.responseToken) {
     console.log(
-      `Rappel ignoré : aucun token pour ${member.email}`
+      `⚠️ Rappel ignoré : aucun token pour ${member.email}`
     );
 
     return false;
@@ -95,52 +141,57 @@ const sendReminder = async (
   const declineUrl =
     `${frontendUrl}/assignment-response/${assignment.responseToken}?action=decline`;
 
-  const html = assignmentEmailTemplate({
-    member,
-    event,
-    department,
-    assignment,
-    confirmUrl,
-    declineUrl,
-  });
+  const html =
+    assignmentEmailTemplate({
+      member,
+      event,
+      department,
+      church,
+      assignment,
+      confirmUrl,
+      declineUrl,
+    });
 
-  let reminderText =
-    "Rappel de programmation";
-
-  if (daysBefore === 1) {
-    reminderText = "Rappel J-1";
-  } else if (daysBefore === 2) {
-    reminderText = "Rappel J-2";
-  } else {
-    reminderText = `Rappel J-${daysBefore}`;
-  }
+  const reminderText =
+    `Rappel J-${daysBefore}`;
 
   await sendEmail({
     to: member.email,
+
     subject:
       `${reminderText} - ${
-        event?.title || "Événement"
+        event?.title ||
+        "Événement"
       }`,
+
     html,
   });
 
   const now = new Date();
 
-  assignment.emailStatus = "sent";
+  assignment.emailStatus =
+    "sent";
 
-  if (!assignment.firstEmailSentAt) {
-    assignment.firstEmailSentAt = now;
+  if (
+    !assignment.firstEmailSentAt
+  ) {
+    assignment.firstEmailSentAt =
+      now;
   }
 
-  assignment.emailSentAt = now;
+  assignment.emailSentAt =
+    now;
 
   assignment.emailSendCount =
-    (assignment.emailSendCount || 0) + 1;
+    (assignment.emailSendCount ||
+      0) + 1;
 
   assignment.reminderCount =
-    (assignment.reminderCount || 0) + 1;
+    (assignment.reminderCount ||
+      0) + 1;
 
-  assignment.lastReminderAt = now;
+  assignment.lastReminderAt =
+    now;
 
   await assignment.save();
 
@@ -152,34 +203,37 @@ const sendReminder = async (
 };
 
 // ======================================================
-// PROCESS PRINCIPAL DES RAPPELS
+// TRAITER LES RAPPELS D'UNE ÉGLISE
 // ======================================================
 
-const processAssignmentReminders = async () => {
+const processChurchReminders = async (
+  churchId
+) => {
   try {
-    console.log(
-      "🔔 Vérification des rappels de programmation..."
-    );
-
-    // ================================================
-    // RÉCUPÉRER LES SETTINGS
-    // ================================================
-
-    let settings =
-      await ChurchSettings.findOne();
-
-    if (!settings) {
-      settings =
-        await ChurchSettings.create({});
+    if (!churchId) {
+      return {
+        success: false,
+        sentCount: 0,
+      };
     }
 
-    // ================================================
-    // RAPPELS DÉSACTIVÉS
-    // ================================================
+    const settings =
+      await getChurchSettings(
+        churchId
+      );
 
-    if (!settings.reminderEnabled) {
+    if (!settings) {
+      return {
+        success: false,
+        sentCount: 0,
+      };
+    }
+
+    if (
+      !settings.reminderEnabled
+    ) {
       console.log(
-        "🔕 Rappels automatiques désactivés"
+        `🔕 Rappels désactivés pour l'église ${churchId}`
       );
 
       return {
@@ -188,26 +242,37 @@ const processAssignmentReminders = async () => {
       };
     }
 
-    // ================================================
-    // JOURS DE RAPPEL CONFIGURÉS
-    // ================================================
+    if (
+      settings.emailNotificationsEnabled ===
+      false
+    ) {
+      console.log(
+        `🔕 Emails désactivés pour l'église ${churchId}`
+      );
+
+      return {
+        success: true,
+        sentCount: 0,
+      };
+    }
 
     const reminderDays =
-      settings.reminderDays?.length
+      Array.isArray(
+        settings.reminderDays
+      ) &&
+      settings.reminderDays
+        .length
         ? settings.reminderDays
         : [2, 1];
 
     console.log(
-      "📅 Jours de rappel configurés :",
+      `📅 Église ${churchId} - rappels :`,
       reminderDays
     );
 
-    // ================================================
-    // PROGRAMMATIONS EN ATTENTE UNIQUEMENT
-    // ================================================
-
     const assignments =
       await Assignment.find({
+        church: churchId,
         status: "pending",
       })
         .populate(
@@ -221,58 +286,43 @@ const processAssignmentReminders = async () => {
         .populate(
           "department",
           "name"
+        )
+        .populate(
+          "church",
+          "name slug"
         );
 
     let sentCount = 0;
 
-    // ================================================
-    // PARCOURIR LES PROGRAMMATIONS
-    // ================================================
-
-    for (const assignment of assignments) {
+    for (
+      const assignment of
+      assignments
+    ) {
       try {
-        // Pas d'événement
-        if (!assignment.event) {
-          continue;
-        }
-
-        // Pas de date
-        if (!assignment.event.date) {
-          continue;
-        }
-
-        // ============================================
-        // NE PAS ENVOYER POUR ÉVÉNEMENT TERMINÉ/ANNULÉ
-        // ============================================
-
-        const eventStatus =
-          assignment.event.status;
-
         if (
-          eventStatus === "Terminé" ||
-          eventStatus === "Annulé"
+          !assignment.event
+            ?.date
         ) {
           continue;
         }
 
-        // ============================================
-        // CALCULER J-X
-        // ============================================
+        if (
+          [
+            "Terminé",
+            "Annulé",
+          ].includes(
+            assignment.event
+              .status
+          )
+        ) {
+          continue;
+        }
 
         const daysBefore =
           getDaysBeforeEvent(
-            assignment.event.date
+            assignment.event
+              .date
           );
-
-        console.log(
-          `Programmation ${
-            assignment._id
-          } : J-${daysBefore}`
-        );
-
-        // ============================================
-        // LE JOUR EST-IL CONFIGURÉ ?
-        // ============================================
 
         if (
           !reminderDays.includes(
@@ -282,28 +332,21 @@ const processAssignmentReminders = async () => {
           continue;
         }
 
-        // ============================================
-        // ÉVITER DOUBLE RAPPEL LE MÊME JOUR
-        // ============================================
-
         if (
           reminderAlreadySentToday(
             assignment.lastReminderAt
           )
         ) {
           console.log(
-            `Rappel déjà envoyé aujourd'hui pour ${
-              assignment.member?.email ||
+            `ℹ️ Rappel déjà envoyé aujourd'hui à ${
+              assignment.member
+                ?.email ||
               assignment._id
             }`
           );
 
           continue;
         }
-
-        // ============================================
-        // ENVOYER LE RAPPEL
-        // ============================================
 
         const sent =
           await sendReminder(
@@ -314,21 +357,109 @@ const processAssignmentReminders = async () => {
         if (sent) {
           sentCount++;
         }
-      } catch (assignmentError) {
+      } catch (
+        assignmentError
+      ) {
         console.error(
-          "❌ Erreur sur une programmation :",
+          `❌ Erreur rappel programmation ${assignment._id} :`,
           assignmentError.message
         );
       }
     }
 
     console.log(
-      `🔔 Vérification terminée : ${sentCount} rappel(s) envoyé(s)`
+      `🔔 Église ${churchId} : ${sentCount} rappel(s) envoyé(s)`
     );
 
     return {
       success: true,
       sentCount,
+    };
+  } catch (error) {
+    console.error(
+      `❌ Erreur rappels église ${churchId} :`,
+      error.message
+    );
+
+    return {
+      success: false,
+      sentCount: 0,
+      error:
+        error.message,
+    };
+  }
+};
+
+// ======================================================
+// TRAITER TOUTES LES ÉGLISES
+// ======================================================
+
+const processAssignmentReminders = async () => {
+  try {
+    console.log(
+      "🔔 Vérification multi-églises des rappels..."
+    );
+
+    // On récupère uniquement les settings
+    // associés à une vraie église.
+    const settingsList =
+      await ChurchSettings.find({
+        church: {
+          $ne: null,
+        },
+      }).select(
+        "church reminderEnabled"
+      );
+
+    if (
+      settingsList.length ===
+      0
+    ) {
+      console.log(
+        "ℹ️ Aucune église configurée pour les rappels"
+      );
+
+      return {
+        success: true,
+        churchesProcessed: 0,
+        sentCount: 0,
+      };
+    }
+
+    let churchesProcessed =
+      0;
+
+    let totalSent =
+      0;
+
+    for (
+      const settings of
+      settingsList
+    ) {
+      if (!settings.church) {
+        continue;
+      }
+
+      const result =
+        await processChurchReminders(
+          settings.church
+        );
+
+      churchesProcessed++;
+
+      totalSent +=
+        result.sentCount || 0;
+    }
+
+    console.log(
+      `🔔 Vérification terminée : ${churchesProcessed} église(s), ${totalSent} rappel(s) envoyé(s)`
+    );
+
+    return {
+      success: true,
+      churchesProcessed,
+      sentCount:
+        totalSent,
     };
   } catch (error) {
     console.error(
@@ -338,8 +469,10 @@ const processAssignmentReminders = async () => {
 
     return {
       success: false,
+      churchesProcessed: 0,
       sentCount: 0,
-      error: error.message,
+      error:
+        error.message,
     };
   }
 };
@@ -350,6 +483,8 @@ const processAssignmentReminders = async () => {
 
 module.exports = {
   processAssignmentReminders,
+  processChurchReminders,
   sendReminder,
   getDaysBeforeEvent,
+  getChurchSettings,
 };

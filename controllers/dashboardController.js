@@ -1,101 +1,276 @@
 const Member = require("../models/Member");
+const Department = require("../models/Department");
 const Event = require("../models/Event");
 const Attendance = require("../models/Attendance");
-const Department = require("../models/Department");
+const Assignment = require("../models/Assignment");
 
-const getDashboardStats = async (req, res) => {
+// ======================================================
+// DASHBOARD GLOBAL
+// ======================================================
+
+const getDashboard = async (req, res) => {
   try {
-    const totalMembers = await Member.countDocuments();
-    const totalDepartments = await Department.countDocuments();
-    const totalEvents = await Event.countDocuments();
-    const totalAttendances = await Attendance.countDocuments();
+    if (!req.churchId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Aucune église associée à cet utilisateur",
+      });
+    }
 
-    const activeMembers = await Member.countDocuments({ status: "Actif" });
-    const inactiveMembers = await Member.countDocuments({ status: "Inactif" });
+    const churchFilter = {
+      church: req.churchId,
+    };
 
-    const plannedEvents = await Event.countDocuments({ status: "Prévu" });
-    const completedEvents = await Event.countDocuments({ status: "Terminé" });
-    const cancelledEvents = await Event.countDocuments({ status: "Annulé" });
+    const now = new Date();
 
-    const departments = await Department.find().sort({ name: 1 });
+    // ==================================================
+    // STATISTIQUES PRINCIPALES
+    // ==================================================
 
-    const membersByDepartment = await Promise.all(
-      departments.map(async (department) => {
-        const total = await Member.countDocuments({
-          department: department._id,
-        });
+    const [
+      totalMembers,
+      activeMembers,
+      inactiveMembers,
 
-        const active = await Member.countDocuments({
-          department: department._id,
-          status: "Actif",
-        });
+      totalDepartments,
+      activeDepartments,
 
-        const inactive = await Member.countDocuments({
-          department: department._id,
-          status: "Inactif",
-        });
+      totalEvents,
+      upcomingEvents,
 
-        return {
-          _id: department._id,
-          name: department.name,
-          leader: department.leader,
-          status: department.status,
-          totalMembers: total,
-          activeMembers: active,
-          inactiveMembers: inactive,
-        };
+      totalAttendances,
+      presentAttendances,
+      absentAttendances,
+
+      totalAssignments,
+      pendingAssignments,
+      confirmedAssignments,
+      declinedAssignments,
+    ] = await Promise.all([
+      Member.countDocuments(
+        churchFilter
+      ),
+
+      Member.countDocuments({
+        ...churchFilter,
+        status: "Actif",
+      }),
+
+      Member.countDocuments({
+        ...churchFilter,
+        status: "Inactif",
+      }),
+
+      Department.countDocuments(
+        churchFilter
+      ),
+
+      Department.countDocuments({
+        ...churchFilter,
+        status: "Actif",
+      }),
+
+      Event.countDocuments(
+        churchFilter
+      ),
+
+      Event.countDocuments({
+        ...churchFilter,
+        date: {
+          $gte: now,
+        },
+        status: {
+          $ne: "Annulé",
+        },
+      }),
+
+      Attendance.countDocuments(
+        churchFilter
+      ),
+
+      Attendance.countDocuments({
+        ...churchFilter,
+        status: "Présent",
+      }),
+
+      Attendance.countDocuments({
+        ...churchFilter,
+        status: "Absent",
+      }),
+
+      Assignment.countDocuments(
+        churchFilter
+      ),
+
+      Assignment.countDocuments({
+        ...churchFilter,
+        status: "pending",
+      }),
+
+      Assignment.countDocuments({
+        ...churchFilter,
+        status: "confirmed",
+      }),
+
+      Assignment.countDocuments({
+        ...churchFilter,
+        status: "declined",
+      }),
+    ]);
+
+    // ==================================================
+    // TAUX DE PRÉSENCE
+    // ==================================================
+
+    const attendanceRate =
+      totalAttendances > 0
+        ? Number(
+            (
+              (presentAttendances /
+                totalAttendances) *
+              100
+            ).toFixed(2)
+          )
+        : 0;
+
+    // ==================================================
+    // TAUX CONFIRMATION PROGRAMMATIONS
+    // ==================================================
+
+    const assignmentConfirmationRate =
+      totalAssignments > 0
+        ? Number(
+            (
+              (confirmedAssignments /
+                totalAssignments) *
+              100
+            ).toFixed(2)
+          )
+        : 0;
+
+    // ==================================================
+    // PROCHAINS ÉVÉNEMENTS
+    // ==================================================
+
+    const nextEvents =
+      await Event.find({
+        ...churchFilter,
+        date: {
+          $gte: now,
+        },
+        status: {
+          $ne: "Annulé",
+        },
       })
-    );
+        .sort({
+          date: 1,
+        })
+        .limit(5);
 
-    const recentMembers = await Member.find()
-      .populate("department")
-      .sort({ createdAt: -1 })
-      .limit(5);
+    // ==================================================
+    // MEMBRES RÉCENTS
+    // ==================================================
 
-    const recentEvents = await Event.find()
-      .sort({ createdAt: -1 })
-      .limit(5);
+    const recentMembers =
+      await Member.find(
+        churchFilter
+      )
+        .populate(
+          "department",
+          "name"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .limit(5);
 
-    const recentAttendances = await Attendance.find()
-      .populate("memberId")
-      .populate("eventId")
-      .sort({ createdAt: -1 })
-      .limit(5);
+    // ==================================================
+    // PROGRAMMATIONS RÉCENTES
+    // ==================================================
 
-    res.status(200).json({
+    const recentAssignments =
+      await Assignment.find(
+        churchFilter
+      )
+        .populate(
+          "member",
+          "firstName lastName"
+        )
+        .populate(
+          "event",
+          "title date"
+        )
+        .populate(
+          "department",
+          "name"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .limit(5);
+
+    // ==================================================
+    // RÉPONSE
+    // ==================================================
+
+    return res.status(200).json({
       success: true,
+
       data: {
-        overview: {
-          totalMembers,
-          totalDepartments,
-          totalEvents,
-          totalAttendances,
-        },
         members: {
-          activeMembers,
-          inactiveMembers,
+          total: totalMembers,
+          active: activeMembers,
+          inactive: inactiveMembers,
         },
+
+        departments: {
+          total: totalDepartments,
+          active: activeDepartments,
+        },
+
         events: {
-          plannedEvents,
-          completedEvents,
-          cancelledEvents,
+          total: totalEvents,
+          upcoming: upcomingEvents,
         },
-        membersByDepartment,
-        recentActivity: {
-          recentMembers,
-          recentEvents,
-          recentAttendances,
+
+        attendances: {
+          total: totalAttendances,
+          present: presentAttendances,
+          absent: absentAttendances,
+          attendanceRate,
         },
+
+        assignments: {
+          total: totalAssignments,
+          pending: pendingAssignments,
+          confirmed:
+            confirmedAssignments,
+          declined:
+            declinedAssignments,
+          confirmationRate:
+            assignmentConfirmationRate,
+        },
+
+        nextEvents,
+        recentMembers,
+        recentAssignments,
       },
     });
   } catch (error) {
-    res.status(500).json({
+    console.error(
+      "Erreur getDashboard :",
+      error
+    );
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
 module.exports = {
-  getDashboardStats,
+  getDashboard,
 };

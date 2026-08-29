@@ -1,13 +1,10 @@
 const express = require("express");
+
 const router = express.Router();
 
-const protect = require(
-  "../middleware/authMiddleware"
-);
-
-const requireChurch = require(
-  "../middleware/tenantMiddleware"
-);
+const protect = require("../middleware/authMiddleware");
+const requireChurch = require("../middleware/tenantMiddleware");
+const authorizeRoles = require("../middleware/roleMiddleware");
 
 const {
   createEvent,
@@ -15,35 +12,37 @@ const {
   getEventById,
   updateEvent,
   deleteEvent,
-} = require(
-  "../controllers/eventController"
-);
+} = require("../controllers/eventController");
 
 router.get(
   "/",
   protect,
   requireChurch,
+  authorizeRoles("admin", "manager"),
   getEvents
+);
+
+router.get(
+  "/:id",
+  protect,
+  requireChurch,
+  authorizeRoles("admin", "manager"),
+  getEventById
 );
 
 router.post(
   "/",
   protect,
   requireChurch,
+  authorizeRoles("admin", "manager"),
   createEvent
-);
-
-router.get(
-  "/:id",
-  protect,
-  requireChurch,
-  getEventById
 );
 
 router.put(
   "/:id",
   protect,
   requireChurch,
+  authorizeRoles("admin", "manager"),
   updateEvent
 );
 
@@ -51,6 +50,7 @@ router.delete(
   "/:id",
   protect,
   requireChurch,
+  authorizeRoles("admin"),
   deleteEvent
 );
 

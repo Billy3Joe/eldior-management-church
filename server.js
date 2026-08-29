@@ -4,6 +4,7 @@
 // ======================================================
 
 const dotenv = require("dotenv");
+
 dotenv.config();
 
 // ======================================================
@@ -14,13 +15,16 @@ const express = require("express");
 const cors = require("cors");
 
 const connectDB = require("./config/db");
+
 const startAssignmentReminderJob = require(
   "./jobs/assignmentReminderJob"
 );
 
-// Enregistrement explicite des modèles utilisés en populate
+// Enregistrement explicite de certains modèles utilisés
+// avec populate()
 require("./models/Church");
 require("./models/User");
+require("./models/ChurchSettings");
 
 // ======================================================
 // APPLICATION EXPRESS
@@ -29,10 +33,15 @@ require("./models/User");
 const app = express();
 
 // ======================================================
-// MIDDLEWARES
+// MIDDLEWARES GLOBAUX
 // ======================================================
 
-app.use(cors());
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 
@@ -43,18 +52,19 @@ app.use(
 );
 
 // ======================================================
-// ROUTE TEST
+// ROUTE PRINCIPALE / TEST API
 // ======================================================
 
 app.get("/", (req, res) => {
-  res.status(200).json({
+  return res.status(200).json({
     success: true,
     message: "API ElDior Management Church en ligne",
+    version: "1.0.0",
   });
 });
 
 // ======================================================
-// ROUTES API
+// AUTHENTIFICATION
 // ======================================================
 
 app.use(
@@ -62,45 +72,90 @@ app.use(
   require("./routes/authRoutes")
 );
 
+// ======================================================
+// MEMBRES
+// ======================================================
+
 app.use(
   "/api/members",
   require("./routes/memberRoutes")
 );
 
-app.use(
-  "/api/events",
-  require("./routes/eventRoutes")
-);
-
-app.use(
-  "/api/attendances",
-  require("./routes/attendanceRoutes")
-);
-
-app.use(
-  "/api/dashboard",
-  require("./routes/dashboardRoutes")
-);
+// ======================================================
+// DÉPARTEMENTS
+// ======================================================
 
 app.use(
   "/api/departments",
   require("./routes/departmentRoutes")
 );
 
+// ======================================================
+// ÉVÉNEMENTS
+// ======================================================
+
+app.use(
+  "/api/events",
+  require("./routes/eventRoutes")
+);
+
+// ======================================================
+// PRÉSENCES
+// ======================================================
+
+app.use(
+  "/api/attendances",
+  require("./routes/attendanceRoutes")
+);
+
+// ======================================================
+// PROGRAMMATIONS
+// ======================================================
+
+app.use(
+  "/api/assignments",
+  require("./routes/assignmentRoutes")
+);
+
+// ======================================================
+// DASHBOARD
+// ======================================================
+
+app.use(
+  "/api/dashboard",
+  require("./routes/dashboardRoutes")
+);
+
+// ======================================================
+// RAPPORTS
+// ======================================================
+
+app.use(
+  "/api/reports",
+  require("./routes/reportRoutes")
+);
+
+// ======================================================
+// UTILISATEURS / ADMINS / MANAGERS
+// ======================================================
+
 app.use(
   "/api/users",
   require("./routes/userRoutes")
 );
+
+// ======================================================
+// JOURNAL D'ACTIVITÉ
+// ======================================================
 
 app.use(
   "/api/activity-logs",
   require("./routes/activityLogRoutes")
 );
 
-app.use(
-  "/api/assignments",
-  require("./routes/assignmentRoutes")
-);
+// ======================================================
+// PARAMÈTRES DE L'ÉGLISE
+// ======================================================
 
 app.use(
   "/api/settings",
@@ -112,9 +167,26 @@ app.use(
 // ======================================================
 
 app.use((req, res) => {
-  res.status(404).json({
+  return res.status(404).json({
     success: false,
-    message: "Route API introuvable",
+    message: `Route API introuvable : ${req.method} ${req.originalUrl}`,
+  });
+});
+
+// ======================================================
+// GESTION GLOBALE DES ERREURS
+// ======================================================
+
+app.use((err, req, res, next) => {
+  console.error("❌ Erreur serveur :", err);
+
+  return res.status(
+    err.status || 500
+  ).json({
+    success: false,
+    message:
+      err.message ||
+      "Une erreur interne est survenue",
   });
 });
 
@@ -122,34 +194,86 @@ app.use((req, res) => {
 // PORT
 // ======================================================
 
-const PORT = process.env.PORT || 8000;
+const PORT =
+  process.env.PORT ||
+  8000;
 
 // ======================================================
-// DÉMARRAGE SERVEUR
+// DÉMARRAGE
 // ======================================================
 
 const startServer = async () => {
   try {
-    // Connexion MongoDB
+    // ================================================
+    // 1. CONNEXION MONGODB
+    // ================================================
+
     await connectDB();
 
-    // Démarrage Express
-    app.listen(PORT, () => {
+    // ================================================
+    // 2. SERVEUR HTTP
+    // ================================================
+
+    const server = app.listen(
+      PORT,
+      () => {
+        console.log(
+          `🚀 Serveur lancé sur le port ${PORT}`
+        );
+
+        console.log(
+          `🌐 API : http://localhost:${PORT}`
+        );
+
+        // ============================================
+        // 3. SCHEDULER MULTI-ÉGLISES
+        // ============================================
+
+        startAssignmentReminderJob();
+      }
+    );
+
+    // ================================================
+    // ARRÊT PROPRE
+    // ================================================
+
+    const shutdown = (signal) => {
       console.log(
-        `🚀 Serveur lancé sur le port ${PORT}`
+        `\n🛑 Signal ${signal} reçu`
       );
 
-      // Scheduler des rappels
-      startAssignmentReminderJob();
-    });
+      server.close(() => {
+        console.log(
+          "✅ Serveur HTTP arrêté"
+        );
+
+        process.exit(0);
+      });
+    };
+
+    process.on(
+      "SIGINT",
+      () =>
+        shutdown("SIGINT")
+    );
+
+    process.on(
+      "SIGTERM",
+      () =>
+        shutdown("SIGTERM")
+    );
   } catch (error) {
     console.error(
       "❌ Impossible de démarrer ElDior Management Church :",
-      error.message
+      error
     );
 
     process.exit(1);
   }
 };
+
+// ======================================================
+// LANCEMENT
+// ======================================================
 
 startServer();

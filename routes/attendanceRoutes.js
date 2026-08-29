@@ -2,8 +2,17 @@ const express = require("express");
 
 const router = express.Router();
 
-const protect = require("../middleware/authMiddleware");
-const requireChurch = require("../middleware/tenantMiddleware");
+const protect = require(
+  "../middleware/authMiddleware"
+);
+
+const requireChurch = require(
+  "../middleware/tenantMiddleware"
+);
+
+const authorizeRoles = require(
+  "../middleware/roleMiddleware"
+);
 
 const {
   markAttendance,
@@ -13,32 +22,39 @@ const {
   updateAttendance,
   deleteAttendance,
   getAttendanceSummary,
-} = require("../controllers/attendanceController");
+} = require(
+  "../controllers/attendanceController"
+);
 
 // ======================================================
-// DEBUG AU DÉMARRAGE
+// TOUTES LES PRÉSENCES
+// ADMIN + MANAGER
 // ======================================================
 
-console.log("ATTENDANCE ROUTES CHECK :", {
-  protect: typeof protect,
-  requireChurch: typeof requireChurch,
-  markAttendance: typeof markAttendance,
-  getAttendances: typeof getAttendances,
-  getAttendancesByEvent: typeof getAttendancesByEvent,
-  getAttendanceById: typeof getAttendanceById,
-  updateAttendance: typeof updateAttendance,
-  deleteAttendance: typeof deleteAttendance,
-  getAttendanceSummary: typeof getAttendanceSummary,
-});
+router.get(
+  "/",
+  protect,
+  requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  getAttendances
+);
 
 // ======================================================
-// RÉSUMÉ
+// RÉSUMÉ DES PRÉSENCES
+// IMPORTANT : cette route doit rester AVANT /:id
 // ======================================================
 
 router.get(
   "/summary",
   protect,
   requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   getAttendanceSummary
 );
 
@@ -50,61 +66,71 @@ router.get(
   "/event/:eventId",
   protect,
   requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   getAttendancesByEvent
 );
 
 // ======================================================
-// LISTE
+// UNE PRÉSENCE
 // ======================================================
 
 router.get(
-  "/",
+  "/:id",
   protect,
   requireChurch,
-  getAttendances
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  getAttendanceById
 );
 
 // ======================================================
-// CRÉER
+// ENREGISTRER UNE PRÉSENCE
 // ======================================================
 
 router.post(
   "/",
   protect,
   requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   markAttendance
 );
 
 // ======================================================
-// DÉTAIL
-// ======================================================
-
-router.get(
-  "/:id",
-  protect,
-  requireChurch,
-  getAttendanceById
-);
-
-// ======================================================
-// MODIFIER
+// MODIFIER UNE PRÉSENCE
 // ======================================================
 
 router.put(
   "/:id",
   protect,
   requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   updateAttendance
 );
 
 // ======================================================
-// SUPPRIMER
+// SUPPRIMER UNE PRÉSENCE
+// ADMIN + MANAGER
 // ======================================================
 
 router.delete(
   "/:id",
   protect,
   requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   deleteAttendance
 );
 

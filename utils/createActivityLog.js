@@ -1,4 +1,6 @@
-const ActivityLog = require("../models/ActivityLog");
+const ActivityLog = require(
+  "../models/ActivityLog"
+);
 
 const createActivityLog = async ({
   req,
@@ -8,26 +10,49 @@ const createActivityLog = async ({
   description = "",
 }) => {
   try {
-    await ActivityLog.create({
-      userId: req.user?._id,
-      userName: req.user?.name || "Système",
-      action,
-      entity,
-      entityId,
-      description,
-    });
-  
-  } catch (emailError) {
-    console.error("=== ERREUR EMAIL PROGRAMMATION ===");
-    console.error("Message :", emailError.message);
-    console.error("Code :", emailError.code);
-    console.error("Response :", emailError.response);
-    console.error("Command :", emailError.command);
-    console.error("Stack :", emailError.stack);
-  
-    assignment.emailStatus = "failed";
-    await assignment.save();
-  }
-  }
+    const churchId =
+      req?.churchId ||
+      req?.user?.church?._id ||
+      req?.user?.church ||
+      null;
 
-module.exports = createActivityLog;
+    const userId =
+      req?.user?._id ||
+      null;
+
+    const userName =
+      req?.user?.name ||
+      "Système";
+
+    await ActivityLog.create({
+      church:
+        churchId || null,
+
+      userId,
+
+      userName,
+
+      action,
+
+      entity,
+
+      entityId:
+        entityId?.toString?.() ||
+        entityId ||
+        "",
+
+      description:
+        description || "",
+    });
+  } catch (error) {
+    // On évite de faire planter une requête principale
+    // uniquement parce que le journal n'a pas pu être écrit.
+    console.error(
+      "Erreur createActivityLog :",
+      error.message
+    );
+  }
+};
+
+module.exports =
+  createActivityLog;

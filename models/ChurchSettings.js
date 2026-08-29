@@ -2,22 +2,11 @@ const mongoose = require("mongoose");
 
 const churchSettingsSchema = new mongoose.Schema(
   {
-    // ==========================================
-    // ÉGLISE / TENANT
-    // Temporairement facultatif pendant
-    // la migration multi-tenant
-    // ==========================================
-
     church: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Church",
       default: null,
-      index: true,
     },
-
-    // ==========================================
-    // RAPPELS
-    // ==========================================
 
     reminderEnabled: {
       type: Boolean,
@@ -41,18 +30,10 @@ const churchSettingsSchema = new mongoose.Schema(
       default: "Europe/Paris",
     },
 
-    // ==========================================
-    // NOTIFICATIONS
-    // ==========================================
-
     emailNotificationsEnabled: {
       type: Boolean,
       default: true,
     },
-
-    // ==========================================
-    // INFORMATIONS ÉGLISE
-    // ==========================================
 
     churchName: {
       type: String,
@@ -75,8 +56,9 @@ const churchSettingsSchema = new mongoose.Schema(
   }
 );
 
-// Une seule configuration par église,
-// uniquement lorsqu'une église est renseignée.
+// Une seule configuration par église.
+// sparse permet encore temporairement les anciens documents
+// avec church = null pendant la migration.
 churchSettingsSchema.index(
   {
     church: 1,

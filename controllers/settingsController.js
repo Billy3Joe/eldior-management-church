@@ -1,65 +1,181 @@
 const ChurchSettings = require("../models/ChurchSettings");
-const createActivityLog = require("../utils/createActivityLog");
+const Church = require("../models/Church");
 
-// Récupérer les paramètres
+const createActivityLog = require(
+  "../utils/createActivityLog"
+);
+
+// ======================================================
+// RÉCUPÉRER LES PARAMÈTRES DE L'ÉGLISE
+// ======================================================
+
 const getSettings = async (req, res) => {
   try {
-    let settings = await ChurchSettings.findOne();
+    if (!req.churchId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Aucune église associée à cet utilisateur",
+      });
+    }
 
+    let settings =
+      await ChurchSettings.findOne({
+        church: req.churchId,
+      });
+
+    // Si cette église n'a pas encore de paramètres,
+    // on les crée automatiquement.
     if (!settings) {
-      settings = await ChurchSettings.create({});
+      const church =
+        await Church.findById(
+          req.churchId
+        );
+
+      if (!church) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Église introuvable",
+        });
+      }
+
+      settings =
+        await ChurchSettings.create({
+          church:
+            church._id,
+
+          churchName:
+            church.name,
+
+          reminderEnabled:
+            true,
+
+          reminderDays:
+            [2, 1],
+
+          reminderHour:
+            9,
+
+          timezone:
+            "Europe/Paris",
+
+          emailNotificationsEnabled:
+            true,
+        });
     }
 
     return res.status(200).json({
       success: true,
-      data: settings,
+      data:
+        settings,
     });
   } catch (error) {
+    console.error(
+      "Erreur getSettings :",
+      error
+    );
+
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };
 
-// Mettre à jour les paramètres
-const updateSettings = async (req, res) => {
+// ======================================================
+// METTRE À JOUR LES PARAMÈTRES
+// ======================================================
+
+const updateSettings = async (
+  req,
+  res
+) => {
   try {
+    if (!req.churchId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Aucune église associée à cet utilisateur",
+      });
+    }
+
     const {
       reminderEnabled,
       reminderDays,
       reminderHour,
       timezone,
       churchName,
+      emailNotificationsEnabled,
+      primaryColor,
+      logo,
     } = req.body;
 
-    let settings = await ChurchSettings.findOne();
+    let settings =
+      await ChurchSettings.findOne({
+        church:
+          req.churchId,
+      });
 
     if (!settings) {
-      settings = new ChurchSettings();
+      settings =
+        new ChurchSettings({
+          church:
+            req.churchId,
+        });
     }
 
-    if (typeof reminderEnabled !== "undefined") {
-      settings.reminderEnabled = reminderEnabled;
+    // ==================================================
+    // RAPPELS
+    // ==================================================
+
+    if (
+      typeof reminderEnabled !==
+      "undefined"
+    ) {
+      settings.reminderEnabled =
+        reminderEnabled;
     }
 
-    if (Array.isArray(reminderDays)) {
+    if (
+      Array.isArray(
+        reminderDays
+      )
+    ) {
       const cleanDays = [
         ...new Set(
           reminderDays
             .map(Number)
-            .filter((day) => day >= 0 && day <= 30)
+            .filter(
+              (day) =>
+                !Number.isNaN(day) &&
+                day >= 0 &&
+                day <= 30
+            )
         ),
-      ].sort((a, b) => b - a);
+      ].sort(
+        (a, b) =>
+          b - a
+      );
 
-      settings.reminderDays = cleanDays;
+      settings.reminderDays =
+        cleanDays;
     }
 
-    if (typeof reminderHour !== "undefined") {
-      const hour = Number(reminderHour);
+    if (
+      typeof reminderHour !==
+      "undefined"
+    ) {
+      const hour =
+        Number(
+          reminderHour
+        );
 
       if (
-        Number.isNaN(hour) ||
+        Number.isNaN(
+          hour
+        ) ||
         hour < 0 ||
         hour > 23
       ) {
@@ -70,37 +186,114 @@ const updateSettings = async (req, res) => {
         });
       }
 
-      settings.reminderHour = hour;
+      settings.reminderHour =
+        hour;
     }
 
-    if (timezone) {
-      settings.timezone = timezone;
+    if (
+      typeof timezone !==
+      "undefined"
+    ) {
+      settings.timezone =
+        timezone ||
+        "Europe/Paris";
     }
 
-    if (typeof churchName !== "undefined") {
-      settings.churchName = churchName.trim();
+    // ==================================================
+    // NOTIFICATIONS EMAIL
+    // ==================================================
+
+    if (
+      typeof emailNotificationsEnabled !==
+      "undefined"
+    ) {
+      settings.emailNotificationsEnabled =
+        emailNotificationsEnabled;
+    }
+
+    // ==================================================
+    // INFORMATIONS ÉGLISE
+    // ==================================================
+
+    if (
+      typeof churchName !==
+      "undefined"
+    ) {
+      settings.churchName =
+        churchName.trim();
+    }
+
+    if (
+      typeof primaryColor !==
+      "undefined"
+    ) {
+      settings.primaryColor =
+        primaryColor;
+    }
+
+    if (
+      typeof logo !==
+      "undefined"
+    ) {
+      settings.logo =
+        logo;
     }
 
     await settings.save();
 
+    // Synchroniser le nom principal
+    // dans la collection Church.
+    if (
+      typeof churchName !==
+        "undefined" &&
+      churchName.trim()
+    ) {
+      await Church.findOneAndUpdate(
+        {
+          _id:
+            req.churchId,
+        },
+        {
+          $set: {
+            name:
+              churchName.trim(),
+          },
+        }
+      );
+    }
+
     await createActivityLog({
       req,
-      action: "UPDATE",
-      entity: "Settings",
-      entityId: settings._id,
+      action:
+        "UPDATE",
+
+      entity:
+        "Settings",
+
+      entityId:
+        settings._id,
+
       description:
         "Mise à jour des paramètres de l'église",
     });
 
     return res.status(200).json({
       success: true,
-      message: "Paramètres enregistrés avec succès",
-      data: settings,
+      message:
+        "Paramètres enregistrés avec succès",
+      data:
+        settings,
     });
   } catch (error) {
+    console.error(
+      "Erreur updateSettings :",
+      error
+    );
+
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };

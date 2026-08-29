@@ -1,42 +1,116 @@
 const cron = require("node-cron");
 
-const ChurchSettings = require("../models/ChurchSettings");
+const ChurchSettings = require(
+  "../models/ChurchSettings"
+);
 
 const {
-  processAssignmentReminders,
-} = require("../services/assignmentReminderService");
+  processChurchReminders,
+} = require(
+  "../services/assignmentReminderService"
+);
 
-// Garde en mémoire le dernier jour exécuté
-let lastExecutionDate = null;
+// Évite plusieurs exécutions dans la même journée.
+// Structure :
+// {
+//   churchId: "2026-08-25"
+// }
+const lastExecutions =
+  new Map();
 
-const startAssignmentReminderJob = () => {
-  console.log(
-    "🔔 Scheduler rappels programmations activé"
-  );
+// ======================================================
+// RÉCUPÉRER HEURE LOCALE
+// ======================================================
 
-  // Vérification immédiate au démarrage
-  processAssignmentReminders();
+const getLocalTime = (
+  timezone
+) => {
+  const formatter =
+    new Intl.DateTimeFormat(
+      "fr-FR",
+      {
+        timeZone:
+          timezone,
 
-  // Vérification toutes les heures
-  cron.schedule(
-    "0 * * * *",
-    async () => {
-      try {
-        let settings =
-          await ChurchSettings.findOne();
+        year:
+          "numeric",
 
-        if (!settings) {
-          settings =
-            await ChurchSettings.create({});
-        }
+        month:
+          "2-digit",
 
-        if (!settings.reminderEnabled) {
-          console.log(
-            "🔕 Rappels automatiques désactivés"
-          );
+        day:
+          "2-digit",
 
-          return;
-        }
+        hour:
+          "2-digit",
+
+        minute:
+          "2-digit",
+
+        hour12:
+          false,
+      }
+    );
+
+  const parts =
+    formatter.formatToParts(
+      new Date()
+    );
+
+  const getPart = (
+    type
+  ) =>
+    parts.find(
+      (part) =>
+        part.type ===
+        type
+    )?.value;
+
+  return {
+    year:
+      getPart("year"),
+
+    month:
+      getPart("month"),
+
+    day:
+      getPart("day"),
+
+    hour:
+      Number(
+        getPart("hour")
+      ),
+
+    minute:
+      Number(
+        getPart("minute")
+      ),
+  };
+};
+
+// ======================================================
+// VÉRIFICATION DES ÉGLISES
+// ======================================================
+
+const checkChurchSchedulers =
+  async () => {
+    try {
+      const settingsList =
+        await ChurchSettings.find({
+          church: {
+            $ne: null,
+          },
+
+          reminderEnabled:
+            true,
+        });
+
+      for (
+        const settings of
+        settingsList
+      ) {
+        const churchId =
+          settings.church.toString();
 
         const timezone =
           settings.timezone ||
@@ -44,92 +118,91 @@ const startAssignmentReminderJob = () => {
 
         const reminderHour =
           Number(
-            settings.reminderHour ?? 9
+            settings.reminderHour ??
+              9
           );
 
-        // Heure locale correspondant au fuseau configuré
-        const nowParts =
-          new Intl.DateTimeFormat(
-            "fr-FR",
-            {
-              timeZone: timezone,
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              hour12: false,
-            }
-          ).formatToParts(
-            new Date()
-          );
-
-        const getPart = (type) =>
-          nowParts.find(
-            (part) =>
-              part.type === type
-          )?.value;
-
-        const currentHour =
-          Number(
-            getPart("hour")
+        const local =
+          getLocalTime(
+            timezone
           );
 
         const currentDate =
-          `${getPart("year")}-${getPart("month")}-${getPart("day")}`;
+          `${local.year}-${local.month}-${local.day}`;
+
+        // Pas encore l'heure
+        if (
+          local.hour !==
+          reminderHour
+        ) {
+          continue;
+        }
+
+        // Déjà exécuté aujourd'hui
+        if (
+          lastExecutions.get(
+            churchId
+          ) ===
+          currentDate
+        ) {
+          continue;
+        }
 
         console.log(
-          `🕒 Scheduler : ${currentDate} ${String(
-            currentHour
+          `⏰ Rappels de l'église ${churchId} à ${String(
+            reminderHour
           ).padStart(
             2,
             "0"
           )}:00 (${timezone})`
         );
 
-        // Ce n'est pas encore l'heure configurée
-        if (
-          currentHour !==
-          reminderHour
-        ) {
-          return;
-        }
-
-        // Déjà exécuté aujourd'hui
-        if (
-          lastExecutionDate ===
-          currentDate
-        ) {
-          console.log(
-            "ℹ️ Rappels déjà vérifiés aujourd'hui"
-          );
-
-          return;
-        }
-
-        console.log(
-          "⏰ Heure configurée atteinte : lancement des rappels"
+        await processChurchReminders(
+          churchId
         );
 
-        await processAssignmentReminders();
-
-        lastExecutionDate =
-          currentDate;
-      } catch (error) {
-        console.error(
-          "❌ Erreur scheduler rappels :",
-          error.message
+        lastExecutions.set(
+          churchId,
+          currentDate
         );
       }
-    },
-    {
-      timezone: "UTC",
+    } catch (error) {
+      console.error(
+        "❌ Erreur scheduler multi-églises :",
+        error.message
+      );
     }
-  );
+  };
 
-  console.log(
-    "🕘 Scheduler dynamique actif : vérification toutes les heures"
-  );
-};
+// ======================================================
+// DÉMARRAGE
+// ======================================================
+
+const startAssignmentReminderJob =
+  () => {
+    console.log(
+      "🔔 Scheduler multi-églises activé"
+    );
+
+    // Vérification au démarrage.
+    // Ici, on vérifie seulement si une église
+    // doit réellement être exécutée maintenant.
+    checkChurchSchedulers();
+
+    // Toutes les 10 minutes.
+    // Cela permet de respecter les fuseaux horaires
+    // et les changements de Settings.
+    cron.schedule(
+      "*/10 * * * *",
+      async () => {
+        await checkChurchSchedulers();
+      }
+    );
+
+    console.log(
+      "🕘 Vérification des horaires toutes les 10 minutes"
+    );
+  };
 
 module.exports =
   startAssignmentReminderJob;
