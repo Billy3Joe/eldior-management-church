@@ -4,88 +4,143 @@ const ChurchSettings = require(
   "../models/ChurchSettings"
 );
 
+const Church = require(
+  "../models/Church"
+);
+
+const {
+  getPlanConfig,
+} = require(
+  "../config/planLimits"
+);
+
 const {
   processChurchReminders,
 } = require(
   "../services/assignmentReminderService"
 );
 
-// Évite plusieurs exécutions dans la même journée.
+// ======================================================
+// MÉMOIRE DES DERNIÈRES EXÉCUTIONS
+//
 // Structure :
-// {
-//   churchId: "2026-08-25"
-// }
+// churchId => "2026-08-30"
+// ======================================================
+
 const lastExecutions =
   new Map();
 
 // ======================================================
-// RÉCUPÉRER HEURE LOCALE
+// ÉVITER LES EXÉCUTIONS PARALLÈLES
+// ======================================================
+
+let isChecking = false;
+
+// ======================================================
+// RÉCUPÉRER L'HEURE LOCALE
 // ======================================================
 
 const getLocalTime = (
   timezone
 ) => {
-  const formatter =
-    new Intl.DateTimeFormat(
-      "fr-FR",
-      {
-        timeZone:
-          timezone,
+  try {
+    const formatter =
+      new Intl.DateTimeFormat(
+        "fr-FR",
+        {
+          timeZone:
+            timezone,
 
-        year:
-          "numeric",
+          year:
+            "numeric",
 
-        month:
-          "2-digit",
+          month:
+            "2-digit",
 
-        day:
-          "2-digit",
+          day:
+            "2-digit",
 
-        hour:
-          "2-digit",
+          hour:
+            "2-digit",
 
-        minute:
-          "2-digit",
+          minute:
+            "2-digit",
 
-        hour12:
-          false,
-      }
+          hour12:
+            false,
+        }
+      );
+
+    const parts =
+      formatter.formatToParts(
+        new Date()
+      );
+
+    const getPart = (
+      type
+    ) =>
+      parts.find(
+        (part) =>
+          part.type ===
+          type
+      )?.value;
+
+    return {
+      year:
+        getPart("year"),
+
+      month:
+        getPart("month"),
+
+      day:
+        getPart("day"),
+
+      hour:
+        Number(
+          getPart("hour")
+        ),
+
+      minute:
+        Number(
+          getPart("minute")
+        ),
+    };
+  } catch (error) {
+    console.error(
+      `❌ Fuseau horaire invalide : ${timezone}`,
+      error.message
     );
 
-  const parts =
-    formatter.formatToParts(
-      new Date()
-    );
+    return null;
+  }
+};
 
-  const getPart = (
-    type
-  ) =>
-    parts.find(
-      (part) =>
-        part.type ===
-        type
-    )?.value;
+// ======================================================
+// VÉRIFIER SI LES RAPPELS SONT AUTORISÉS
+// PAR LE PLAN
+// ======================================================
 
-  return {
-    year:
-      getPart("year"),
+const churchCanUseReminders = (
+  church
+) => {
+  if (!church) {
+    return false;
+  }
 
-    month:
-      getPart("month"),
+  const plan =
+    String(
+      church.plan ||
+        "free"
+    ).toLowerCase();
 
-    day:
-      getPart("day"),
+  const config =
+    getPlanConfig(plan);
 
-    hour:
-      Number(
-        getPart("hour")
-      ),
-
-    minute:
-      Number(
-        getPart("minute")
-      ),
-  };
+  return (
+    config?.features
+      ?.reminders ===
+    true
+  );
 };
 
 // ======================================================
@@ -94,7 +149,21 @@ const getLocalTime = (
 
 const checkChurchSchedulers =
   async () => {
+    if (isChecking) {
+      console.log(
+        "⏳ Vérification des rappels déjà en cours"
+      );
+
+      return;
+    }
+
+    isChecking = true;
+
     try {
+      // ==================================================
+      // UNIQUEMENT SETTINGS AVEC RAPPELS ACTIVÉS
+      // ==================================================
+
       const settingsList =
         await ChurchSettings.find({
           church: {
@@ -103,79 +172,212 @@ const checkChurchSchedulers =
 
           reminderEnabled:
             true,
-        });
+        }).populate(
+          "church"
+        );
+
+      // ==================================================
+      // PARCOURIR LES ÉGLISES
+      // ==================================================
 
       for (
         const settings of
         settingsList
       ) {
-        const churchId =
-          settings.church.toString();
+        try {
+          const church =
+            settings.church;
 
-        const timezone =
-          settings.timezone ||
-          "Europe/Paris";
+          // ==================================================
+          // ÉGLISE EXISTANTE
+          // ==================================================
 
-        const reminderHour =
-          Number(
-            settings.reminderHour ??
-              9
-          );
+          if (!church) {
+            continue;
+          }
 
-        const local =
-          getLocalTime(
-            timezone
-          );
+          const churchId =
+            church._id.toString();
 
-        const currentDate =
-          `${local.year}-${local.month}-${local.day}`;
+          // ==================================================
+          // ÉGLISE ACTIVE
+          // ==================================================
 
-        // Pas encore l'heure
-        if (
-          local.hour !==
-          reminderHour
-        ) {
-          continue;
-        }
+          if (
+            church.isActive ===
+            false
+          ) {
+            continue;
+          }
 
-        // Déjà exécuté aujourd'hui
-        if (
-          lastExecutions.get(
-            churchId
-          ) ===
-          currentDate
-        ) {
-          continue;
-        }
+          // ==================================================
+          // ABONNEMENT ACTIF
+          // ==================================================
 
-        console.log(
-          `⏰ Rappels de l'église ${churchId} à ${String(
+          const status =
+            church.status ||
+            "active";
+
+          if (
+            status !==
+            "active"
+          ) {
+            continue;
+          }
+
+          // ==================================================
+          // PLAN AUTORISÉ
+          //
+          // FREE      -> NON
+          // STANDARD  -> NON
+          // PREMIUM   -> OUI
+          // ==================================================
+
+          if (
+            !churchCanUseReminders(
+              church
+            )
+          ) {
+            // ==================================================
+            // NETTOYAGE AUTOMATIQUE
+            //
+            // Si une ancienne église Free/Standard
+            // avait encore reminderEnabled=true,
+            // on le désactive.
+            // ==================================================
+
+            settings.reminderEnabled =
+              false;
+
+            await settings.save();
+
+            console.log(
+              `🔒 Rappels désactivés pour l'église ${churchId} : plan ${church.plan || "free"}`
+            );
+
+            continue;
+          }
+
+          // ==================================================
+          // FUSEAU HORAIRE
+          // ==================================================
+
+          const timezone =
+            settings.timezone ||
+            "Europe/Paris";
+
+          const local =
+            getLocalTime(
+              timezone
+            );
+
+          if (!local) {
+            continue;
+          }
+
+          // ==================================================
+          // HEURE DE RAPPEL
+          // ==================================================
+
+          const reminderHour =
+            Number(
+              settings.reminderHour ??
+                9
+            );
+
+          if (
+            Number.isNaN(
+              reminderHour
+            ) ||
+            reminderHour < 0 ||
+            reminderHour > 23
+          ) {
+            console.warn(
+              `⚠️ Heure de rappel invalide pour l'église ${churchId}`
+            );
+
+            continue;
+          }
+
+          // ==================================================
+          // DATE LOCALE
+          // ==================================================
+
+          const currentDate =
+            `${local.year}-${local.month}-${local.day}`;
+
+          // ==================================================
+          // PAS ENCORE L'HEURE
+          // ==================================================
+
+          if (
+            local.hour !==
             reminderHour
-          ).padStart(
-            2,
-            "0"
-          )}:00 (${timezone})`
-        );
+          ) {
+            continue;
+          }
 
-        await processChurchReminders(
-          churchId
-        );
+          // ==================================================
+          // DÉJÀ EXÉCUTÉ AUJOURD'HUI
+          // ==================================================
 
-        lastExecutions.set(
-          churchId,
-          currentDate
-        );
+          if (
+            lastExecutions.get(
+              churchId
+            ) ===
+            currentDate
+          ) {
+            continue;
+          }
+
+          // ==================================================
+          // EXÉCUTION
+          // ==================================================
+
+          console.log(
+            `⏰ Rappels de l'église ${church.name} (${churchId}) à ${String(
+              reminderHour
+            ).padStart(
+              2,
+              "0"
+            )}:00 (${timezone})`
+          );
+
+          await processChurchReminders(
+            churchId
+          );
+
+          // ==================================================
+          // MARQUER COMME EXÉCUTÉ
+          // ==================================================
+
+          lastExecutions.set(
+            churchId,
+            currentDate
+          );
+
+          console.log(
+            `✅ Rappels traités pour ${church.name}`
+          );
+        } catch (churchError) {
+          console.error(
+            "❌ Erreur traitement rappel d'une église :",
+            churchError
+          );
+        }
       }
     } catch (error) {
       console.error(
         "❌ Erreur scheduler multi-églises :",
-        error.message
+        error
       );
+    } finally {
+      isChecking = false;
     }
   };
 
 // ======================================================
-// DÉMARRAGE
+// DÉMARRAGE DU SCHEDULER
 // ======================================================
 
 const startAssignmentReminderJob =
@@ -184,14 +386,23 @@ const startAssignmentReminderJob =
       "🔔 Scheduler multi-églises activé"
     );
 
-    // Vérification au démarrage.
-    // Ici, on vérifie seulement si une église
-    // doit réellement être exécutée maintenant.
-    checkChurchSchedulers();
+    // ==================================================
+    // PREMIÈRE VÉRIFICATION AU DÉMARRAGE
+    // ==================================================
 
-    // Toutes les 10 minutes.
-    // Cela permet de respecter les fuseaux horaires
-    // et les changements de Settings.
+    checkChurchSchedulers().catch(
+      (error) => {
+        console.error(
+          "❌ Erreur vérification initiale du scheduler :",
+          error
+        );
+      }
+    );
+
+    // ==================================================
+    // TOUTES LES 10 MINUTES
+    // ==================================================
+
     cron.schedule(
       "*/10 * * * *",
       async () => {
@@ -203,6 +414,10 @@ const startAssignmentReminderJob =
       "🕘 Vérification des horaires toutes les 10 minutes"
     );
   };
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports =
   startAssignmentReminderJob;

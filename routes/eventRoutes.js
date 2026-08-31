@@ -6,17 +6,37 @@ const Event = require(
   "../models/Event"
 );
 
-const protect = require(
+// ======================================================
+// AUTH
+// ======================================================
+
+const authMiddleware = require(
   "../middleware/authMiddleware"
 );
+
+const protect =
+  authMiddleware.protect ||
+  authMiddleware;
+
+// ======================================================
+// TENANT
+// ======================================================
 
 const requireChurch = require(
   "../middleware/tenantMiddleware"
 );
 
+// ======================================================
+// RÔLES
+// ======================================================
+
 const authorizeRoles = require(
   "../middleware/roleMiddleware"
 );
+
+// ======================================================
+// ABONNEMENT
+// ======================================================
 
 const {
   requireActiveSubscription,
@@ -25,6 +45,10 @@ const {
 } = require(
   "../middleware/subscriptionMiddleware"
 );
+
+// ======================================================
+// CONTROLLER
+// ======================================================
 
 const {
   createEvent,
@@ -36,25 +60,42 @@ const {
   "../controllers/eventController"
 );
 
-// Liste
+// ======================================================
+// LISTE DES ÉVÉNEMENTS
+// ======================================================
+
 router.get(
   "/",
   protect,
   requireChurch,
   requireActiveSubscription,
   requireFeature("events"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   getEvents
 );
 
-// Création
+// ======================================================
+// CRÉATION D'UN ÉVÉNEMENT
+//
+// FREE      = 10 événements maximum
+// STANDARD  = 100 événements maximum
+// PREMIUM   = illimité
+// ======================================================
+
 router.post(
   "/",
   protect,
   requireChurch,
   requireActiveSubscription,
   requireFeature("events"),
-  authorizeRoles("admin", "manager"),
+
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
 
   enforceResourceLimit({
     resource: "events",
@@ -64,37 +105,63 @@ router.post(
   createEvent
 );
 
-// Détail
+// ======================================================
+// DÉTAIL D'UN ÉVÉNEMENT
+// ======================================================
+
 router.get(
   "/:id",
   protect,
   requireChurch,
   requireActiveSubscription,
   requireFeature("events"),
-  authorizeRoles("admin", "manager"),
+
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+
   getEventById
 );
 
-// Modification
+// ======================================================
+// MODIFICATION D'UN ÉVÉNEMENT
+// ======================================================
+
 router.put(
   "/:id",
   protect,
   requireChurch,
   requireActiveSubscription,
   requireFeature("events"),
-  authorizeRoles("admin", "manager"),
+
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+
   updateEvent
 );
 
-// Suppression admin uniquement
+// ======================================================
+// SUPPRESSION D'UN ÉVÉNEMENT
+// ADMIN UNIQUEMENT
+// ======================================================
+
 router.delete(
   "/:id",
   protect,
   requireChurch,
   requireActiveSubscription,
   requireFeature("events"),
+
   authorizeRoles("admin"),
+
   deleteEvent
 );
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = router;

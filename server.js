@@ -11,7 +11,6 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-
 const connectDB = require("./config/db");
 
 // ======================================================
@@ -82,6 +81,15 @@ app.use(
 app.use(
   "/api/members",
   require("./routes/memberRoutes")
+);
+
+// ======================================================
+// SUIVI DES VISITEURS
+// ======================================================
+
+app.use(
+  "/api/visitor-follow-up",
+  require("./routes/visitorFollowUpRoutes")
 );
 
 // ======================================================
@@ -264,6 +272,7 @@ const startServer =
       const server =
         app.listen(
           PORT,
+
           () => {
             console.log(
               `🚀 Serveur lancé sur le port ${PORT}`
@@ -315,6 +324,7 @@ const startServer =
 
       process.on(
         "SIGINT",
+
         () => {
           shutdown("SIGINT");
         }
@@ -322,6 +332,7 @@ const startServer =
 
       process.on(
         "SIGTERM",
+
         () => {
           shutdown("SIGTERM");
         }
@@ -333,6 +344,7 @@ const startServer =
 
       process.on(
         "unhandledRejection",
+
         (error) => {
           console.error(
             "❌ Promesse non gérée :",

@@ -7,6 +7,20 @@ const connectDB = async () => {
     );
 
     console.log("✅ MongoDB connecté");
+    console.log(
+      "📦 DB active :",
+      mongoose.connection.name
+    );
+    
+    console.log(
+      "🔗 Host Mongo :",
+      mongoose.connection.host
+    );
+    
+    console.log(
+      "🔌 Port Mongo :",
+      mongoose.connection.port
+    );
 
     return connection;
   } catch (error) {

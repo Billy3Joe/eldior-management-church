@@ -2,13 +2,47 @@ const express = require("express");
 
 const router = express.Router();
 
-const protect = require(
+// ======================================================
+// AUTH
+// ======================================================
+
+const authMiddleware = require(
   "../middleware/authMiddleware"
 );
+
+const protect =
+  authMiddleware.protect ||
+  authMiddleware;
+
+// ======================================================
+// TENANT
+// ======================================================
 
 const requireChurch = require(
   "../middleware/tenantMiddleware"
 );
+
+// ======================================================
+// RÔLES
+// ======================================================
+
+const authorizeRoles = require(
+  "../middleware/roleMiddleware"
+);
+
+// ======================================================
+// ABONNEMENT
+// ======================================================
+
+const {
+  requireActiveSubscription,
+} = require(
+  "../middleware/subscriptionMiddleware"
+);
+
+// ======================================================
+// CONTROLLER
+// ======================================================
 
 const {
   getSettings,
@@ -18,51 +52,44 @@ const {
 );
 
 // ======================================================
-// ADMIN UNIQUEMENT
-// ======================================================
-
-const adminOnly = (
-  req,
-  res,
-  next
-) => {
-  if (
-    req.user?.role !==
-    "admin"
-  ) {
-    return res.status(403).json({
-      success: false,
-      message:
-        "Accès réservé aux administrateurs",
-    });
-  }
-
-  next();
-};
-
-// ======================================================
 // LIRE LES PARAMÈTRES
+//
 // ADMIN + MANAGER
+// TOUS LES PLANS
 // ======================================================
 
 router.get(
   "/",
   protect,
   requireChurch,
+  requireActiveSubscription,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   getSettings
 );
 
 // ======================================================
 // MODIFIER LES PARAMÈTRES
+//
 // ADMIN UNIQUEMENT
+//
+// Les restrictions Free / Standard / Premium
+// sont contrôlées précisément dans le controller.
 // ======================================================
 
 router.put(
   "/",
   protect,
   requireChurch,
-  adminOnly,
+  requireActiveSubscription,
+  authorizeRoles("admin"),
   updateSettings
 );
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = router;

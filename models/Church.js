@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 
 const churchSchema = new mongoose.Schema(
   {
+    // ==================================================
+    // IDENTITÉ
+    // ==================================================
+
     name: {
       type: String,
       required: true,
@@ -71,11 +75,11 @@ const churchSchema = new mongoose.Schema(
       type: String,
       enum: [
         "free",
-        "starter",
-        "pro",
+        "standard",
         "premium",
       ],
       default: "free",
+      index: true,
     },
 
     trialEndsAt: {
@@ -93,11 +97,24 @@ const churchSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ==================================================
+    // COMPATIBILITÉ / ANCIENNE LIMITE
+    // ==================================================
+    // Les vraies limites sont maintenant gérées dans
+    // config/planLimits.js.
+    // On conserve ce champ uniquement pour compatibilité
+    // avec d'éventuelles anciennes données.
+    // ==================================================
+
     maxMembers: {
       type: Number,
       default: 100,
       min: 1,
     },
+
+    // ==================================================
+    // ACTIVATION GLOBALE
+    // ==================================================
 
     isActive: {
       type: Boolean,
@@ -118,6 +135,20 @@ const churchSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// ======================================================
+// INDEX UTILES
+// ======================================================
+
+churchSchema.index({
+  plan: 1,
+  status: 1,
+  isActive: 1,
+});
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = mongoose.model(
   "Church",

@@ -2,17 +2,37 @@ const express = require("express");
 
 const router = express.Router();
 
-const protect = require(
+// ======================================================
+// AUTH
+// ======================================================
+
+const authMiddleware = require(
   "../middleware/authMiddleware"
 );
+
+const protect =
+  authMiddleware.protect ||
+  authMiddleware;
+
+// ======================================================
+// TENANT
+// ======================================================
 
 const requireChurch = require(
   "../middleware/tenantMiddleware"
 );
 
+// ======================================================
+// RÔLES
+// ======================================================
+
 const authorizeRoles = require(
   "../middleware/roleMiddleware"
 );
+
+// ======================================================
+// ABONNEMENT
+// ======================================================
 
 const {
   requireActiveSubscription,
@@ -21,6 +41,10 @@ const {
   "../middleware/subscriptionMiddleware"
 );
 
+// ======================================================
+// CONTROLLER
+// ======================================================
+
 const {
   getActivityLogs,
   clearActivityLogs,
@@ -28,7 +52,16 @@ const {
   "../controllers/activityLogController"
 );
 
-// Lecture
+// ======================================================
+// LECTURE DU JOURNAL D'ACTIVITÉ
+//
+// FREE      = interdit
+// STANDARD  = interdit
+// PREMIUM   = autorisé
+//
+// GET /api/activity-logs
+// ======================================================
+
 router.get(
   "/",
   protect,
@@ -39,7 +72,16 @@ router.get(
   getActivityLogs
 );
 
-// Suppression complète
+// ======================================================
+// SUPPRESSION COMPLÈTE DU JOURNAL
+//
+// FREE      = interdit
+// STANDARD  = interdit
+// PREMIUM   = autorisé
+//
+// DELETE /api/activity-logs
+// ======================================================
+
 router.delete(
   "/",
   protect,
@@ -49,5 +91,9 @@ router.delete(
   authorizeRoles("admin"),
   clearActivityLogs
 );
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = router;

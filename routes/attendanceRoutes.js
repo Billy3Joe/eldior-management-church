@@ -2,17 +2,37 @@ const express = require("express");
 
 const router = express.Router();
 
-const protect = require(
+// ======================================================
+// AUTH
+// ======================================================
+
+const authMiddleware = require(
   "../middleware/authMiddleware"
 );
+
+const protect =
+  authMiddleware.protect ||
+  authMiddleware;
+
+// ======================================================
+// TENANT
+// ======================================================
 
 const requireChurch = require(
   "../middleware/tenantMiddleware"
 );
 
+// ======================================================
+// RÔLES
+// ======================================================
+
 const authorizeRoles = require(
   "../middleware/roleMiddleware"
 );
+
+// ======================================================
+// CONTROLLER
+// ======================================================
 
 const {
   markAttendance,
@@ -22,13 +42,15 @@ const {
   updateAttendance,
   deleteAttendance,
   getAttendanceSummary,
+  getEventAttendanceAnalytics,
+  getGlobalAttendanceAnalytics,
+  getSundayAttendanceAnalytics,
 } = require(
   "../controllers/attendanceController"
 );
 
 // ======================================================
 // TOUTES LES PRÉSENCES
-// ADMIN + MANAGER
 // ======================================================
 
 router.get(
@@ -43,8 +65,7 @@ router.get(
 );
 
 // ======================================================
-// RÉSUMÉ DES PRÉSENCES
-// IMPORTANT : cette route doit rester AVANT /:id
+// RÉSUMÉ
 // ======================================================
 
 router.get(
@@ -56,6 +77,53 @@ router.get(
     "manager"
   ),
   getAttendanceSummary
+);
+
+// ======================================================
+// STATISTIQUES GLOBALES
+// IMPORTANT : avant /:id
+// ======================================================
+
+router.get(
+  "/analytics/global",
+  protect,
+  requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  getGlobalAttendanceAnalytics
+);
+
+// ======================================================
+// STATISTIQUES PASTORALES DU DIMANCHE
+// IMPORTANT : avant /:id
+// ======================================================
+
+router.get(
+  "/analytics/sundays",
+  protect,
+  requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  getSundayAttendanceAnalytics
+);
+
+// ======================================================
+// STATISTIQUES D'UN ÉVÉNEMENT
+// ======================================================
+
+router.get(
+  "/analytics/event/:eventId",
+  protect,
+  requireChurch,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  getEventAttendanceAnalytics
 );
 
 // ======================================================
@@ -89,7 +157,7 @@ router.get(
 );
 
 // ======================================================
-// ENREGISTRER UNE PRÉSENCE
+// POINTER UNE PRÉSENCE
 // ======================================================
 
 router.post(
@@ -120,7 +188,6 @@ router.put(
 
 // ======================================================
 // SUPPRIMER UNE PRÉSENCE
-// ADMIN + MANAGER
 // ======================================================
 
 router.delete(
@@ -133,5 +200,9 @@ router.delete(
   ),
   deleteAttendance
 );
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = router;

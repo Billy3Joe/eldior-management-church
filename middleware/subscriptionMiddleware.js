@@ -1,211 +1,513 @@
+const mongoose = require("mongoose");
+
 const Church = require(
-    "../models/Church"
-  );
-  
-  const {
-    getPlanConfig,
-  } = require(
-    "../config/planLimits"
-  );
-  
-  // ======================================================
-  // CHARGER L'ABONNEMENT DE L'ÉGLISE
-  // ======================================================
-  
-  const requireActiveSubscription =
-    async (req, res, next) => {
-      try {
-        if (!req.churchId) {
-          return res.status(403).json({
+  "../models/Church"
+);
+
+const {
+  getPlanConfig,
+} = require(
+  "../config/planLimits"
+);
+
+// ======================================================
+// CHARGER ET VÉRIFIER L'ABONNEMENT DE L'ÉGLISE
+// ======================================================
+
+const requireActiveSubscription =
+  async (req, res, next) => {
+    try {
+      // ==================================================
+      // ÉGLISE REQUISE
+      // ==================================================
+
+      if (!req.churchId) {
+        return res
+          .status(403)
+          .json({
             success: false,
+
+            code:
+              "CHURCH_REQUIRED",
+
             message:
               "Aucune église associée à cet utilisateur",
           });
-        }
-  
-        const church =
-          await Church.findById(
-            req.churchId
-          );
-  
-        if (!church) {
-          return res.status(404).json({
+      }
+
+      // ==================================================
+      // ID MONGODB VALIDE
+      // ==================================================
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          req.churchId
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
             success: false,
+
+            code:
+              "INVALID_CHURCH_ID",
+
+            message:
+              "Identifiant d'église invalide",
+          });
+      }
+
+      // ==================================================
+      // RÉCUPÉRER L'ÉGLISE
+      // ==================================================
+
+      const church =
+        await Church.findById(
+          req.churchId
+        );
+
+      if (!church) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+
+            code:
+              "CHURCH_NOT_FOUND",
+
             message:
               "Église introuvable",
           });
-        }
-  
-        if (
-          church.status &&
-          church.status !== "active"
-        ) {
-          return res.status(403).json({
+      }
+
+      // ==================================================
+      // ÉGLISE DÉSACTIVÉE
+      // ==================================================
+
+      if (
+        church.isActive ===
+        false
+      ) {
+        return res
+          .status(403)
+          .json({
             success: false,
+
+            code:
+              "CHURCH_DISABLED",
+
+            message:
+              "Cette église est actuellement désactivée",
+          });
+      }
+
+      // ==================================================
+      // STATUT DE L'ÉGLISE
+      // ==================================================
+
+      const status =
+        church.status ||
+        "active";
+
+      if (
+        status !== "active"
+      ) {
+        let message =
+          "L'abonnement de cette église n'est pas actif";
+
+        if (
+          status ===
+          "suspended"
+        ) {
+          message =
+            "Cette église est actuellement suspendue";
+        }
+
+        if (
+          status ===
+          "cancelled"
+        ) {
+          message =
+            "L'abonnement de cette église a été annulé";
+        }
+
+        return res
+          .status(403)
+          .json({
+            success: false,
+
             code:
               "SUBSCRIPTION_INACTIVE",
-            message:
-              "L'abonnement de cette église n'est pas actif",
+
+            status,
+
+            message,
           });
-        }
-  
-        const plan =
-          church.plan || "free";
-  
-        const planConfig =
-          getPlanConfig(plan);
-  
-        req.church =
-          church;
-  
-        req.subscription = {
-          plan,
-          config: planConfig,
-        };
-  
-        next();
-      } catch (error) {
-        console.error(
-          "Erreur requireActiveSubscription :",
-          error
+      }
+
+      // ==================================================
+      // PLAN
+      // ==================================================
+
+      const plan =
+        String(
+          church.plan ||
+            "free"
+        ).toLowerCase();
+
+      const planConfig =
+        getPlanConfig(
+          plan
         );
-  
-        return res.status(500).json({
+
+      // ==================================================
+      // AJOUT AU REQUEST
+      // ==================================================
+
+      req.church =
+        church;
+
+      req.subscription = {
+        plan,
+
+        status,
+
+        config:
+          planConfig,
+
+        churchId:
+          church._id.toString(),
+      };
+
+      next();
+    } catch (error) {
+      console.error(
+        "Erreur requireActiveSubscription :",
+        error
+      );
+
+      return res
+        .status(500)
+        .json({
           success: false,
+
+          code:
+            "SUBSCRIPTION_CHECK_ERROR",
+
           message:
             "Impossible de vérifier l'abonnement",
         });
-      }
-    };
-  
-  // ======================================================
-  // VÉRIFIER UNE FONCTIONNALITÉ
-  // ======================================================
-  
-  const requireFeature =
-    (featureName) => {
-      return (req, res, next) => {
-        const subscription =
-          req.subscription;
-  
-        if (!subscription) {
-          return res.status(500).json({
+    }
+  };
+
+// ======================================================
+// VÉRIFIER UNE FONCTIONNALITÉ
+// ======================================================
+
+const requireFeature =
+  (featureName) => {
+    return (
+      req,
+      res,
+      next
+    ) => {
+      // ==================================================
+      // ABONNEMENT INITIALISÉ
+      // ==================================================
+
+      if (
+        !req.subscription
+      ) {
+        return res
+          .status(500)
+          .json({
             success: false,
+
+            code:
+              "SUBSCRIPTION_NOT_INITIALIZED",
+
             message:
               "Abonnement non initialisé",
           });
-        }
-  
-        const enabled =
-          subscription.config
-            ?.features?.[
-            featureName
-          ];
-  
-        if (!enabled) {
-          return res.status(403).json({
+      }
+
+      // ==================================================
+      // NOM DE FEATURE
+      // ==================================================
+
+      if (
+        !featureName ||
+        typeof featureName !==
+          "string"
+      ) {
+        return res
+          .status(500)
+          .json({
             success: false,
+
+            code:
+              "INVALID_FEATURE_NAME",
+
+            message:
+              "Fonctionnalité d'abonnement invalide",
+          });
+      }
+
+      // ==================================================
+      // DISPONIBILITÉ
+      // ==================================================
+
+      const enabled =
+        req.subscription
+          .config
+          ?.features?.[
+          featureName
+        ];
+
+      if (
+        enabled !== true
+      ) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+
             code:
               "FEATURE_NOT_AVAILABLE",
-  
+
             feature:
               featureName,
-  
+
             plan:
-              subscription.plan,
-  
+              req.subscription
+                .plan,
+
             message:
               "Cette fonctionnalité n'est pas disponible avec votre abonnement actuel",
           });
-        }
-  
-        next();
-      };
+      }
+
+      next();
     };
-  
-  // ======================================================
-  // VÉRIFIER UNE LIMITE DE RESSOURCE
-  // ======================================================
-  
-  const enforceResourceLimit =
-    ({
-      resource,
-      Model,
-    }) =>
-    async (req, res, next) => {
+  };
+
+// ======================================================
+// VÉRIFIER UNE LIMITE DE RESSOURCE
+// ======================================================
+
+const enforceResourceLimit =
+  ({
+    resource,
+    Model,
+    filter = {},
+  }) => {
+    return async (
+      req,
+      res,
+      next
+    ) => {
       try {
+        // ==================================================
+        // ABONNEMENT INITIALISÉ
+        // ==================================================
+
         if (
           !req.subscription
         ) {
-          return res.status(500).json({
-            success: false,
-            message:
-              "Abonnement non initialisé",
-          });
+          return res
+            .status(500)
+            .json({
+              success: false,
+
+              code:
+                "SUBSCRIPTION_NOT_INITIALIZED",
+
+              message:
+                "Abonnement non initialisé",
+            });
         }
-  
+
+        // ==================================================
+        // CONFIGURATION VALIDE
+        // ==================================================
+
+        if (
+          !resource ||
+          !Model
+        ) {
+          return res
+            .status(500)
+            .json({
+              success: false,
+
+              code:
+                "RESOURCE_LIMIT_CONFIGURATION_ERROR",
+
+              message:
+                "Configuration de limite invalide",
+            });
+        }
+
+        // ==================================================
+        // RÉCUPÉRER LA LIMITE
+        // ==================================================
+
         const limit =
-          req.subscription.config
+          req.subscription
+            .config
             ?.limits?.[
             resource
           ];
-  
-        // null = illimité
+
+        // ==================================================
+        // RESSOURCE NON CONFIGURÉE
+        // ==================================================
+
         if (
-          limit === null ||
           typeof limit ===
-            "undefined"
+          "undefined"
+        ) {
+          console.warn(
+            `⚠️ Aucune limite configurée pour la ressource "${resource}"`
+          );
+
+          return next();
+        }
+
+        // ==================================================
+        // NULL = ILLIMITÉ
+        // ==================================================
+
+        if (
+          limit === null
         ) {
           return next();
         }
-  
-        const currentCount =
-          await Model.countDocuments({
-            church:
-              req.churchId,
-          });
-  
+
+        // ==================================================
+        // LIMITE INVALIDE
+        // ==================================================
+
         if (
-          currentCount >= limit
+          typeof limit !==
+            "number" ||
+          limit < 0
         ) {
-          return res.status(403).json({
-            success: false,
-  
-            code:
-              "PLAN_LIMIT_REACHED",
-  
-            resource,
-  
-            plan:
-              req.subscription.plan,
-  
-            limit,
-  
-            current:
-              currentCount,
-  
-            message:
-              `Limite atteinte : votre abonnement autorise au maximum ${limit} ${resource}`,
-          });
+          console.error(
+            `❌ Limite invalide pour "${resource}" :`,
+            limit
+          );
+
+          return res
+            .status(500)
+            .json({
+              success: false,
+
+              code:
+                "INVALID_PLAN_LIMIT",
+
+              message:
+                "La limite configurée pour cette ressource est invalide",
+            });
         }
-  
+
+        // ==================================================
+        // COMPTER LES RESSOURCES DE CETTE ÉGLISE
+        // ==================================================
+
+        const currentCount =
+          await Model.countDocuments(
+            {
+              church:
+                req.churchId,
+
+              ...filter,
+            }
+          );
+
+        // ==================================================
+        // LIMITE ATTEINTE
+        // ==================================================
+
+        if (
+          currentCount >=
+          limit
+        ) {
+          return res
+            .status(403)
+            .json({
+              success: false,
+
+              code:
+                "PLAN_LIMIT_REACHED",
+
+              resource,
+
+              plan:
+                req.subscription
+                  .plan,
+
+              limit,
+
+              current:
+                currentCount,
+
+              remaining:
+                0,
+
+              message:
+                `Limite atteinte : votre abonnement ${req.subscription.plan} autorise au maximum ${limit} ${resource}.`,
+            });
+        }
+
+        // ==================================================
+        // INFORMATIONS UTILES
+        // ==================================================
+
+        req.resourceLimit = {
+          resource,
+
+          current:
+            currentCount,
+
+          limit,
+
+          remaining:
+            Math.max(
+              limit -
+                currentCount,
+              0
+            ),
+        };
+
         next();
       } catch (error) {
         console.error(
-          "Erreur enforceResourceLimit :",
+          `Erreur enforceResourceLimit (${resource}) :`,
           error
         );
-  
-        return res.status(500).json({
-          success: false,
-          message:
-            "Impossible de vérifier la limite de l'abonnement",
-        });
+
+        return res
+          .status(500)
+          .json({
+            success: false,
+
+            code:
+              "RESOURCE_LIMIT_CHECK_ERROR",
+
+            message:
+              "Impossible de vérifier la limite de l'abonnement",
+          });
       }
     };
-  
-  module.exports = {
-    requireActiveSubscription,
-    requireFeature,
-    enforceResourceLimit,
   };
+
+// ======================================================
+// EXPORTS
+// ======================================================
+
+module.exports = {
+  requireActiveSubscription,
+  requireFeature,
+  enforceResourceLimit,
+};

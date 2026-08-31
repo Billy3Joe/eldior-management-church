@@ -6,17 +6,37 @@ const User = require(
   "../models/User"
 );
 
-const protect = require(
+// ======================================================
+// MIDDLEWARE AUTH
+// ======================================================
+
+const authMiddleware = require(
   "../middleware/authMiddleware"
 );
+
+const protect =
+  authMiddleware.protect ||
+  authMiddleware;
+
+// ======================================================
+// TENANT
+// ======================================================
 
 const requireChurch = require(
   "../middleware/tenantMiddleware"
 );
 
+// ======================================================
+// RÔLES
+// ======================================================
+
 const authorizeRoles = require(
   "../middleware/roleMiddleware"
 );
+
+// ======================================================
+// ABONNEMENT
+// ======================================================
 
 const {
   requireActiveSubscription,
@@ -24,6 +44,10 @@ const {
 } = require(
   "../middleware/subscriptionMiddleware"
 );
+
+// ======================================================
+// CONTROLLER
+// ======================================================
 
 const {
   getUsers,
@@ -51,7 +75,11 @@ router.get(
 );
 
 // ======================================================
-// CRÉATION
+// CRÉATION UTILISATEUR
+//
+// FREE      = 2 utilisateurs maximum
+// STANDARD  = 5 utilisateurs maximum
+// PREMIUM   = illimité
 // ======================================================
 
 router.post(
@@ -83,7 +111,7 @@ router.patch(
 );
 
 // ======================================================
-// DÉTAIL
+// DÉTAIL UTILISATEUR
 // ======================================================
 
 router.get(
@@ -96,7 +124,7 @@ router.get(
 );
 
 // ======================================================
-// MODIFICATION
+// MODIFICATION UTILISATEUR
 // ======================================================
 
 router.put(
@@ -109,7 +137,7 @@ router.put(
 );
 
 // ======================================================
-// SUPPRESSION
+// SUPPRESSION UTILISATEUR
 // ======================================================
 
 router.delete(
@@ -120,5 +148,9 @@ router.delete(
   authorizeRoles("admin"),
   deleteUser
 );
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = router;

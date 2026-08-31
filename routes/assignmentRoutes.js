@@ -2,17 +2,37 @@ const express = require("express");
 
 const router = express.Router();
 
-const protect = require(
+// ======================================================
+// AUTH
+// ======================================================
+
+const authMiddleware = require(
   "../middleware/authMiddleware"
 );
+
+const protect =
+  authMiddleware.protect ||
+  authMiddleware;
+
+// ======================================================
+// TENANT
+// ======================================================
 
 const requireChurch = require(
   "../middleware/tenantMiddleware"
 );
 
+// ======================================================
+// RÔLES
+// ======================================================
+
 const authorizeRoles = require(
   "../middleware/roleMiddleware"
 );
+
+// ======================================================
+// ABONNEMENT
+// ======================================================
 
 const {
   requireActiveSubscription,
@@ -21,28 +41,31 @@ const {
   "../middleware/subscriptionMiddleware"
 );
 
+// ======================================================
+// CONTROLLER
+// ======================================================
+
 const {
   createAssignment,
   getAssignments,
   getAssignmentById,
   updateAssignment,
   deleteAssignment,
-
   confirmAssignment,
   declineAssignment,
-
   getAssignmentStats,
-
   getPublicAssignment,
   respondToAssignment,
-
   resendAssignmentEmail,
 } = require(
   "../controllers/assignmentController"
 );
 
 // ======================================================
-// PUBLIC
+// ROUTES PUBLIQUES
+//
+// Ces routes ne demandent pas de connexion.
+// Elles servent au membre qui reçoit un lien par email.
 // ======================================================
 
 router.get(
@@ -56,7 +79,11 @@ router.post(
 );
 
 // ======================================================
-// STATS
+// STATISTIQUES
+//
+// FREE      = interdit
+// STANDARD  = autorisé
+// PREMIUM   = autorisé
 // ======================================================
 
 router.get(
@@ -65,12 +92,15 @@ router.get(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   getAssignmentStats
 );
 
 // ======================================================
-// LISTE
+// LISTE DES ASSIGNATIONS
 // ======================================================
 
 router.get(
@@ -79,12 +109,15 @@ router.get(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   getAssignments
 );
 
 // ======================================================
-// CRÉATION
+// CRÉATION D'UNE ASSIGNATION
 // ======================================================
 
 router.post(
@@ -93,12 +126,23 @@ router.post(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   createAssignment
 );
 
 // ======================================================
-// RENVOI EMAIL
+// RENVOYER L'EMAIL
+//
+// assignments requis
+// +
+// emailNotifications requis
+//
+// FREE      = interdit
+// STANDARD  = autorisé
+// PREMIUM   = autorisé
 // ======================================================
 
 router.post(
@@ -107,13 +151,18 @@ router.post(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  requireFeature("emailNotifications"),
-  authorizeRoles("admin", "manager"),
+  requireFeature(
+    "emailNotifications"
+  ),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   resendAssignmentEmail
 );
 
 // ======================================================
-// CONFIRMER
+// CONFIRMER UNE ASSIGNATION
 // ======================================================
 
 router.patch(
@@ -122,12 +171,15 @@ router.patch(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   confirmAssignment
 );
 
 // ======================================================
-// REFUSER
+// REFUSER UNE ASSIGNATION
 // ======================================================
 
 router.patch(
@@ -136,12 +188,15 @@ router.patch(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   declineAssignment
 );
 
 // ======================================================
-// DÉTAIL
+// DÉTAIL D'UNE ASSIGNATION
 // ======================================================
 
 router.get(
@@ -150,12 +205,15 @@ router.get(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   getAssignmentById
 );
 
 // ======================================================
-// MODIFICATION
+// MODIFICATION D'UNE ASSIGNATION
 // ======================================================
 
 router.put(
@@ -164,12 +222,15 @@ router.put(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   updateAssignment
 );
 
 // ======================================================
-// SUPPRESSION
+// SUPPRESSION D'UNE ASSIGNATION
 // ======================================================
 
 router.delete(
@@ -178,8 +239,15 @@ router.delete(
   requireChurch,
   requireActiveSubscription,
   requireFeature("assignments"),
-  authorizeRoles("admin", "manager"),
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
   deleteAssignment
 );
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = router;

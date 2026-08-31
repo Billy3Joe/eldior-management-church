@@ -2,25 +2,6 @@ const express = require("express");
 
 const router = express.Router();
 
-const Department = require(
-  "../models/Department"
-);
-
-// ======================================================
-// CONTROLLER
-// ======================================================
-
-const {
-  createDepartment,
-  getDepartments,
-  getDepartmentStats,
-  getDepartmentById,
-  updateDepartment,
-  deleteDepartment,
-} = require(
-  "../controllers/departmentController"
-);
-
 // ======================================================
 // AUTH
 // ======================================================
@@ -55,122 +36,120 @@ const authorizeRoles = require(
 
 const {
   requireActiveSubscription,
-  requireFeature,
-  enforceResourceLimit,
 } = require(
   "../middleware/subscriptionMiddleware"
 );
 
 // ======================================================
-// TOUTES LES ROUTES SONT PROTÉGÉES
+// CONTROLLER
 // ======================================================
 
-router.use(
+const {
+  getVisitorsFollowUp,
+  getVisitorFollowUpStats,
+  getVisitorFollowUpById,
+  updateVisitorFollowUp,
+  markVisitorAsContacted,
+  integrateVisitor,
+} = require(
+  "../controllers/visitorFollowUpController"
+);
+
+// ======================================================
+// STATISTIQUES DU SUIVI
+// IMPORTANT : avant /:id
+// ======================================================
+
+router.get(
+  "/stats",
   protect,
   requireChurch,
-  requireActiveSubscription
-);
-
-// ======================================================
-// LISTE DES DÉPARTEMENTS
-// GET /api/departments
-// ======================================================
-
-router.get(
-  "/",
-  requireFeature("departments"),
-  getDepartments
-);
-
-// ======================================================
-// STATISTIQUES
-//
-// IMPORTANT :
-// cette route DOIT être placée
-// AVANT /:id
-//
-// GET /api/departments/stats/all
-// ======================================================
-
-router.get(
-  "/stats/all",
-  requireFeature("departments"),
-  getDepartmentStats
-);
-
-// ======================================================
-// UN DÉPARTEMENT
-// GET /api/departments/:id
-// ======================================================
-
-router.get(
-  "/:id",
-  requireFeature("departments"),
-  getDepartmentById
-);
-
-// ======================================================
-// CRÉER
-//
-// POST /api/departments
-//
-// FREE      = 5 départements maximum
-// STANDARD  = 20 départements maximum
-// PREMIUM   = illimité
-//
-// admin + manager
-// ======================================================
-
-router.post(
-  "/",
-  requireFeature("departments"),
-
+  requireActiveSubscription,
   authorizeRoles(
     "admin",
     "manager"
   ),
-
-  enforceResourceLimit({
-    resource: "departments",
-    Model: Department,
-  }),
-
-  createDepartment
+  getVisitorFollowUpStats
 );
 
 // ======================================================
-// MODIFIER
-// PUT /api/departments/:id
-// admin + manager
+// LISTE DES VISITEURS À SUIVRE
+// ======================================================
+
+router.get(
+  "/",
+  protect,
+  requireChurch,
+  requireActiveSubscription,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  getVisitorsFollowUp
+);
+
+// ======================================================
+// MARQUER COMME CONTACTÉ
+// ======================================================
+
+router.patch(
+  "/:id/contact",
+  protect,
+  requireChurch,
+  requireActiveSubscription,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  markVisitorAsContacted
+);
+
+// ======================================================
+// INTÉGRER COMME MEMBRE
+// ======================================================
+
+router.patch(
+  "/:id/integrate",
+  protect,
+  requireChurch,
+  requireActiveSubscription,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  integrateVisitor
+);
+
+// ======================================================
+// DÉTAIL D'UN VISITEUR
+// ======================================================
+
+router.get(
+  "/:id",
+  protect,
+  requireChurch,
+  requireActiveSubscription,
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+  getVisitorFollowUpById
+);
+
+// ======================================================
+// MODIFICATION DU SUIVI
 // ======================================================
 
 router.put(
   "/:id",
-  requireFeature("departments"),
-
+  protect,
+  requireChurch,
+  requireActiveSubscription,
   authorizeRoles(
     "admin",
     "manager"
   ),
-
-  updateDepartment
-);
-
-// ======================================================
-// SUPPRIMER
-// DELETE /api/departments/:id
-// admin uniquement
-// ======================================================
-
-router.delete(
-  "/:id",
-  requireFeature("departments"),
-
-  authorizeRoles(
-    "admin"
-  ),
-
-  deleteDepartment
+  updateVisitorFollowUp
 );
 
 // ======================================================

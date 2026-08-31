@@ -6,25 +6,48 @@ const Member = require(
   "../models/Member"
 );
 
-const protect = require(
+// ======================================================
+// AUTH
+// ======================================================
+
+const authMiddleware = require(
   "../middleware/authMiddleware"
 );
+
+const protect =
+  authMiddleware.protect ||
+  authMiddleware;
+
+// ======================================================
+// TENANT
+// ======================================================
 
 const requireChurch = require(
   "../middleware/tenantMiddleware"
 );
 
+// ======================================================
+// RÔLES
+// ======================================================
+
 const authorizeRoles = require(
   "../middleware/roleMiddleware"
 );
 
+// ======================================================
+// ABONNEMENT
+// ======================================================
+
 const {
   requireActiveSubscription,
-  requireFeature,
   enforceResourceLimit,
 } = require(
   "../middleware/subscriptionMiddleware"
 );
+
+// ======================================================
+// CONTROLLER
+// ======================================================
 
 const {
   createMember,
@@ -37,7 +60,7 @@ const {
 );
 
 // ======================================================
-// LISTE
+// LISTE DES MEMBRES
 // ======================================================
 
 router.get(
@@ -45,7 +68,6 @@ router.get(
   protect,
   requireChurch,
   requireActiveSubscription,
-  requireFeature("members"),
   authorizeRoles(
     "admin",
     "manager"
@@ -54,7 +76,11 @@ router.get(
 );
 
 // ======================================================
-// CRÉATION
+// CRÉATION D'UN MEMBRE
+//
+// FREE      = 50 membres maximum
+// STANDARD  = 300 membres maximum
+// PREMIUM   = illimité
 // ======================================================
 
 router.post(
@@ -62,22 +88,19 @@ router.post(
   protect,
   requireChurch,
   requireActiveSubscription,
-  requireFeature("members"),
   authorizeRoles(
     "admin",
     "manager"
   ),
-
   enforceResourceLimit({
     resource: "members",
     Model: Member,
   }),
-
   createMember
 );
 
 // ======================================================
-// DÉTAIL
+// DÉTAIL D'UN MEMBRE
 // ======================================================
 
 router.get(
@@ -85,7 +108,6 @@ router.get(
   protect,
   requireChurch,
   requireActiveSubscription,
-  requireFeature("members"),
   authorizeRoles(
     "admin",
     "manager"
@@ -94,7 +116,7 @@ router.get(
 );
 
 // ======================================================
-// MODIFICATION
+// MODIFICATION D'UN MEMBRE
 // ======================================================
 
 router.put(
@@ -102,7 +124,6 @@ router.put(
   protect,
   requireChurch,
   requireActiveSubscription,
-  requireFeature("members"),
   authorizeRoles(
     "admin",
     "manager"
@@ -111,7 +132,8 @@ router.put(
 );
 
 // ======================================================
-// SUPPRESSION
+// SUPPRESSION D'UN MEMBRE
+//
 // ADMIN UNIQUEMENT
 // ======================================================
 
@@ -120,9 +142,12 @@ router.delete(
   protect,
   requireChurch,
   requireActiveSubscription,
-  requireFeature("members"),
   authorizeRoles("admin"),
   deleteMember
 );
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = router;
