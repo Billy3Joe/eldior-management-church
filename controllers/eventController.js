@@ -20,6 +20,7 @@ const createEvent = async (req, res) => {
       location,
       leader,
       status,
+      isSundayService,
     } = req.body;
 
     if (!req.churchId) {
@@ -46,19 +47,49 @@ const createEvent = async (req, res) => {
       });
     }
 
+    const eventDate = new Date(date);
+
+    if (Number.isNaN(eventDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "La date de l'événement est invalide",
+      });
+    }
+
     const event = await Event.create({
       church: req.churchId,
+
       title: title.trim(),
-      type: type || "Autre",
+
+      type:
+        typeof type === "string" && type.trim()
+          ? type.trim()
+          : "Autre",
+
       description:
-        description?.trim() || "",
-      date,
+        typeof description === "string"
+          ? description.trim()
+          : "",
+
+      date: eventDate,
+
       location:
-        location?.trim() || "",
+        typeof location === "string"
+          ? location.trim()
+          : "",
+
       leader:
-        leader?.trim() || "",
+        typeof leader === "string"
+          ? leader.trim()
+          : "",
+
       status:
         status || "À venir",
+
+      isSundayService:
+        isSundayService === true ||
+        isSundayService === "true",
     });
 
     await createActivityLog({
@@ -104,10 +135,19 @@ const getEvents = async (req, res) => {
     }
 
     const page =
-      parseInt(req.query.page, 10) || 1;
+      Math.max(
+        parseInt(req.query.page, 10) || 1,
+        1
+      );
 
     const limit =
-      parseInt(req.query.limit, 10) || 10;
+      Math.min(
+        Math.max(
+          parseInt(req.query.limit, 10) || 10,
+          1
+        ),
+        1000
+      );
 
     const skip =
       (page - 1) * limit;
@@ -118,6 +158,7 @@ const getEvents = async (req, res) => {
       status,
       startDate,
       endDate,
+      isSundayService,
     } = req.query;
 
     const filter = {
@@ -132,46 +173,100 @@ const getEvents = async (req, res) => {
       filter.status = status;
     }
 
-    if (search) {
+    // ==================================================
+    // FILTRE CULTE DU DIMANCHE
+    // ==================================================
+
+    if (
+      typeof isSundayService !==
+      "undefined"
+    ) {
+      filter.isSundayService =
+        isSundayService === true ||
+        isSundayService === "true";
+    }
+
+    // ==================================================
+    // RECHERCHE
+    // ==================================================
+
+    if (
+      typeof search === "string" &&
+      search.trim()
+    ) {
+      const searchValue =
+        search.trim();
+
       filter.$or = [
         {
           title: {
-            $regex: search,
+            $regex: searchValue,
             $options: "i",
           },
         },
         {
           description: {
-            $regex: search,
+            $regex: searchValue,
             $options: "i",
           },
         },
         {
           location: {
-            $regex: search,
+            $regex: searchValue,
             $options: "i",
           },
         },
         {
           leader: {
-            $regex: search,
+            $regex: searchValue,
             $options: "i",
           },
         },
       ];
     }
 
+    // ==================================================
+    // FILTRE PAR DATE
+    // ==================================================
+
     if (startDate || endDate) {
       filter.date = {};
 
       if (startDate) {
-        filter.date.$gte =
+        const start =
           new Date(startDate);
+
+        if (
+          Number.isNaN(
+            start.getTime()
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Date de début invalide",
+          });
+        }
+
+        filter.date.$gte =
+          start;
       }
 
       if (endDate) {
         const end =
           new Date(endDate);
+
+        if (
+          Number.isNaN(
+            end.getTime()
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Date de fin invalide",
+          });
+        }
 
         end.setHours(
           23,
@@ -180,12 +275,15 @@ const getEvents = async (req, res) => {
           999
         );
 
-        filter.date.$lte = end;
+        filter.date.$lte =
+          end;
       }
     }
 
     const total =
-      await Event.countDocuments(filter);
+      await Event.countDocuments(
+        filter
+      );
 
     const events =
       await Event.find(filter)
@@ -232,7 +330,9 @@ const getEventById = async (
     const { id } = req.params;
 
     if (
-      !mongoose.Types.ObjectId.isValid(id)
+      !mongoose.Types.ObjectId.isValid(
+        id
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -260,6 +360,11 @@ const getEventById = async (
       data: event,
     });
   } catch (error) {
+    console.error(
+      "Erreur getEventById :",
+      error
+    );
+
     return res.status(500).json({
       success: false,
       message: error.message,
@@ -279,7 +384,9 @@ const updateEvent = async (
     const { id } = req.params;
 
     if (
-      !mongoose.Types.ObjectId.isValid(id)
+      !mongoose.Types.ObjectId.isValid(
+        id
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -310,13 +417,22 @@ const updateEvent = async (
       location,
       leader,
       status,
+      isSundayService,
     } = req.body;
+
+    // ==================================================
+    // TITRE
+    // ==================================================
 
     if (
       typeof title !==
       "undefined"
     ) {
-      if (!title.trim()) {
+      if (
+        typeof title !==
+          "string" ||
+        !title.trim()
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -328,49 +444,112 @@ const updateEvent = async (
         title.trim();
     }
 
+    // ==================================================
+    // TYPE
+    // ==================================================
+
     if (
       typeof type !==
       "undefined"
     ) {
-      event.type = type;
+      event.type =
+        typeof type === "string"
+          ? type.trim()
+          : "Autre";
     }
+
+    // ==================================================
+    // DESCRIPTION
+    // ==================================================
 
     if (
       typeof description !==
       "undefined"
     ) {
       event.description =
-        description.trim();
+        typeof description === "string"
+          ? description.trim()
+          : "";
     }
+
+    // ==================================================
+    // DATE
+    // ==================================================
 
     if (
       typeof date !==
       "undefined"
     ) {
-      event.date = date;
+      const eventDate =
+        new Date(date);
+
+      if (
+        Number.isNaN(
+          eventDate.getTime()
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "La date de l'événement est invalide",
+        });
+      }
+
+      event.date =
+        eventDate;
     }
+
+    // ==================================================
+    // LIEU
+    // ==================================================
 
     if (
       typeof location !==
       "undefined"
     ) {
       event.location =
-        location.trim();
+        typeof location === "string"
+          ? location.trim()
+          : "";
     }
+
+    // ==================================================
+    // RESPONSABLE
+    // ==================================================
 
     if (
       typeof leader !==
       "undefined"
     ) {
       event.leader =
-        leader.trim();
+        typeof leader === "string"
+          ? leader.trim()
+          : "";
     }
+
+    // ==================================================
+    // STATUT
+    // ==================================================
 
     if (
       typeof status !==
       "undefined"
     ) {
-      event.status = status;
+      event.status =
+        status;
+    }
+
+    // ==================================================
+    // CULTE DU DIMANCHE
+    // ==================================================
+
+    if (
+      typeof isSundayService !==
+      "undefined"
+    ) {
+      event.isSundayService =
+        isSundayService === true ||
+        isSundayService === "true";
     }
 
     await event.save();
@@ -415,7 +594,9 @@ const deleteEvent = async (
     const { id } = req.params;
 
     if (
-      !mongoose.Types.ObjectId.isValid(id)
+      !mongoose.Types.ObjectId.isValid(
+        id
+      )
     ) {
       return res.status(400).json({
         success: false,

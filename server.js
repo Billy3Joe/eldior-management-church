@@ -9,36 +9,56 @@ require("dotenv").config();
 // IMPORTS
 // ======================================================
 
-const express = require("express");
-const cors = require("cors");
-const connectDB = require("./config/db");
+const express =
+  require("express");
+
+const cors =
+  require("cors");
+
+const connectDB =
+  require("./config/db");
 
 // ======================================================
 // MODÈLES IMPORTÉS EXPLICITEMENT
 // ======================================================
 
 require("./models/Church");
+
 require("./models/User");
+
 require("./models/ChurchSettings");
+
+require("./models/Member");
+
+require("./models/Family");
+
+require("./models/PastoralAlert");
+
+require("./models/Group");
 
 // ======================================================
 // SCHEDULER DES RAPPELS
 // ======================================================
 
 const startAssignmentReminderJob =
-  require("./jobs/assignmentReminderJob");
+  require(
+    "./jobs/assignmentReminderJob"
+  );
 
 // ======================================================
 // APPLICATION EXPRESS
 // ======================================================
 
-const app = express();
+const app =
+  express();
 
 // ======================================================
 // MIDDLEWARES GLOBAUX
 // ======================================================
 
-app.use(cors());
+app.use(
+  cors()
+);
 
 app.use(
   express.json({
@@ -57,13 +77,18 @@ app.use(
 // ROUTE DE TEST
 // ======================================================
 
-app.get("/", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message:
-      "API ElDior Management Church opérationnelle",
-  });
-});
+app.get(
+  "/",
+  (req, res) => {
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message:
+          "API ElDior Management Church opérationnelle",
+      });
+  }
+);
 
 // ======================================================
 // AUTHENTIFICATION
@@ -71,16 +96,64 @@ app.get("/", (req, res) => {
 
 app.use(
   "/api/auth",
-  require("./routes/authRoutes")
+  require(
+    "./routes/authRoutes"
+  )
 );
 
 // ======================================================
-// MEMBRES
+// MEMBRES / PERSONNES
 // ======================================================
 
 app.use(
   "/api/members",
-  require("./routes/memberRoutes")
+  require(
+    "./routes/memberRoutes"
+  )
+);
+
+// ======================================================
+// FAMILLES / FOYERS
+// ======================================================
+
+app.use(
+  "/api/families",
+  require(
+    "./routes/familyRoutes"
+  )
+);
+
+// ======================================================
+// GROUPES / CELLULES
+// ======================================================
+
+app.use(
+  "/api/groups",
+  require(
+    "./routes/groupRoutes"
+  )
+);
+
+// ======================================================
+// PARCOURS SPIRITUEL
+// ======================================================
+
+app.use(
+  "/api/spiritual-journey",
+  require(
+    "./routes/spiritualJourneyRoutes"
+  )
+);
+
+// ======================================================
+// ALERTES PASTORALES / ABSENCES PROLONGÉES
+// ======================================================
+
+app.use(
+  "/api/pastoral-alerts",
+  require(
+    "./routes/pastoralAlertRoutes"
+  )
 );
 
 // ======================================================
@@ -89,7 +162,9 @@ app.use(
 
 app.use(
   "/api/visitor-follow-up",
-  require("./routes/visitorFollowUpRoutes")
+  require(
+    "./routes/visitorFollowUpRoutes"
+  )
 );
 
 // ======================================================
@@ -98,7 +173,9 @@ app.use(
 
 app.use(
   "/api/departments",
-  require("./routes/departmentRoutes")
+  require(
+    "./routes/departmentRoutes"
+  )
 );
 
 // ======================================================
@@ -107,7 +184,9 @@ app.use(
 
 app.use(
   "/api/events",
-  require("./routes/eventRoutes")
+  require(
+    "./routes/eventRoutes"
+  )
 );
 
 // ======================================================
@@ -116,7 +195,9 @@ app.use(
 
 app.use(
   "/api/attendances",
-  require("./routes/attendanceRoutes")
+  require(
+    "./routes/attendanceRoutes"
+  )
 );
 
 // ======================================================
@@ -125,7 +206,9 @@ app.use(
 
 app.use(
   "/api/assignments",
-  require("./routes/assignmentRoutes")
+  require(
+    "./routes/assignmentRoutes"
+  )
 );
 
 // ======================================================
@@ -134,7 +217,9 @@ app.use(
 
 app.use(
   "/api/dashboard",
-  require("./routes/dashboardRoutes")
+  require(
+    "./routes/dashboardRoutes"
+  )
 );
 
 // ======================================================
@@ -143,16 +228,20 @@ app.use(
 
 app.use(
   "/api/reports",
-  require("./routes/reportRoutes")
+  require(
+    "./routes/reportRoutes"
+  )
 );
 
 // ======================================================
-// UTILISATEURS D'UNE ÉGLISE
+// UTILISATEURS
 // ======================================================
 
 app.use(
   "/api/users",
-  require("./routes/userRoutes")
+  require(
+    "./routes/userRoutes"
+  )
 );
 
 // ======================================================
@@ -161,48 +250,59 @@ app.use(
 
 app.use(
   "/api/activity-logs",
-  require("./routes/activityLogRoutes")
+  require(
+    "./routes/activityLogRoutes"
+  )
 );
 
 // ======================================================
-// PARAMÈTRES DE L'ÉGLISE
+// PARAMÈTRES
 // ======================================================
 
 app.use(
   "/api/settings",
-  require("./routes/settingsRoutes")
+  require(
+    "./routes/settingsRoutes"
+  )
 );
 
 // ======================================================
-// ABONNEMENT DE L'ÉGLISE
+// ABONNEMENT
 // ======================================================
 
 app.use(
   "/api/subscription",
-  require("./routes/subscriptionRoutes")
+  require(
+    "./routes/subscriptionRoutes"
+  )
 );
 
 // ======================================================
-// ESPACE SUPER ADMIN / PROPRIÉTAIRE ELDIOR
+// SUPER ADMIN ELDIOR
 // ======================================================
 
 app.use(
   "/api/platform",
-  require("./routes/platformRoutes")
+  require(
+    "./routes/platformRoutes"
+  )
 );
 
 // ======================================================
 // ROUTE 404
-// IMPORTANT : DOIT RESTER APRÈS TOUTES LES ROUTES API
 // ======================================================
 
-app.use((req, res) => {
-  return res.status(404).json({
-    success: false,
-    message:
-      `Route API introuvable : ${req.method} ${req.originalUrl}`,
-  });
-});
+app.use(
+  (req, res) => {
+    return res
+      .status(404)
+      .json({
+        success: false,
+        message:
+          `Route API introuvable : ${req.method} ${req.originalUrl}`,
+      });
+  }
+);
 
 // ======================================================
 // GESTION GLOBALE DES ERREURS
@@ -220,23 +320,27 @@ app.use(
       err
     );
 
-    return res.status(
-      err.status || 500
-    ).json({
-      success: false,
+    return res
+      .status(
+        err.status ||
+          500
+      )
+      .json({
+        success: false,
 
-      message:
-        err.message ||
-        "Erreur interne du serveur",
+        message:
+          err.message ||
+          "Erreur interne du serveur",
 
-      ...(process.env.NODE_ENV ===
-      "development"
-        ? {
-            stack:
-              err.stack,
-          }
-        : {}),
-    });
+        ...(process.env
+          .NODE_ENV ===
+        "development"
+          ? {
+              stack:
+                err.stack,
+            }
+          : {}),
+      });
   }
 );
 
@@ -255,24 +359,15 @@ const PORT =
 const startServer =
   async () => {
     try {
-      // ==================================================
-      // CONNEXION MONGODB
-      // ==================================================
-
       await connectDB();
 
       console.log(
         "✅ Connexion MongoDB établie"
       );
 
-      // ==================================================
-      // DÉMARRAGE HTTP
-      // ==================================================
-
       const server =
         app.listen(
           PORT,
-
           () => {
             console.log(
               `🚀 Serveur lancé sur le port ${PORT}`
@@ -281,10 +376,6 @@ const startServer =
             console.log(
               `🌐 API : http://localhost:${PORT}`
             );
-
-            // ==========================================
-            // SCHEDULER MULTI-ÉGLISES
-            // ==========================================
 
             try {
               startAssignmentReminderJob();
@@ -300,10 +391,6 @@ const startServer =
             }
           }
         );
-
-      // ==================================================
-      // ARRÊT PROPRE
-      // ==================================================
 
       const shutdown =
         (signal) => {
@@ -324,27 +411,22 @@ const startServer =
 
       process.on(
         "SIGINT",
-
-        () => {
-          shutdown("SIGINT");
-        }
+        () =>
+          shutdown(
+            "SIGINT"
+          )
       );
 
       process.on(
         "SIGTERM",
-
-        () => {
-          shutdown("SIGTERM");
-        }
+        () =>
+          shutdown(
+            "SIGTERM"
+          )
       );
-
-      // ==================================================
-      // PROMESSES NON GÉRÉES
-      // ==================================================
 
       process.on(
         "unhandledRejection",
-
         (error) => {
           console.error(
             "❌ Promesse non gérée :",
