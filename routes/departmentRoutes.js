@@ -1,10 +1,13 @@
-const express = require("express");
+const express =
+  require("express");
 
-const router = express.Router();
+const router =
+  express.Router();
 
-const Department = require(
-  "../models/Department"
-);
+const Department =
+  require(
+    "../models/Department"
+  );
 
 // ======================================================
 // CONTROLLER
@@ -14,8 +17,12 @@ const {
   createDepartment,
   getDepartments,
   getDepartmentStats,
+  getMemberDepartments,
   getDepartmentById,
   updateDepartment,
+  addMemberToDepartment,
+  updateDepartmentMember,
+  removeMemberFromDepartment,
   deleteDepartment,
 } = require(
   "../controllers/departmentController"
@@ -25,9 +32,10 @@ const {
 // AUTH
 // ======================================================
 
-const authMiddleware = require(
-  "../middleware/authMiddleware"
-);
+const authMiddleware =
+  require(
+    "../middleware/authMiddleware"
+  );
 
 const protect =
   authMiddleware.protect ||
@@ -37,17 +45,19 @@ const protect =
 // TENANT
 // ======================================================
 
-const requireChurch = require(
-  "../middleware/tenantMiddleware"
-);
+const requireChurch =
+  require(
+    "../middleware/tenantMiddleware"
+  );
 
 // ======================================================
 // RÔLES
 // ======================================================
 
-const authorizeRoles = require(
-  "../middleware/roleMiddleware"
-);
+const authorizeRoles =
+  require(
+    "../middleware/roleMiddleware"
+  );
 
 // ======================================================
 // ABONNEMENT
@@ -72,46 +82,52 @@ router.use(
 );
 
 // ======================================================
+// STATISTIQUES
+// GET /api/departments/stats/all
+//
+// IMPORTANT :
+// doit être placé avant /:id
+// ======================================================
+
+router.get(
+  "/stats/all",
+  requireFeature(
+    "departments"
+  ),
+  getDepartmentStats
+);
+
+// ======================================================
+// DÉPARTEMENTS D'UNE PERSONNE
+// GET /api/departments/member/:memberId
+//
+// IMPORTANT :
+// doit être placé avant /:id
+// ======================================================
+
+router.get(
+  "/member/:memberId",
+  requireFeature(
+    "departments"
+  ),
+  getMemberDepartments
+);
+
+// ======================================================
 // LISTE DES DÉPARTEMENTS
 // GET /api/departments
 // ======================================================
 
 router.get(
   "/",
-  requireFeature("departments"),
+  requireFeature(
+    "departments"
+  ),
   getDepartments
 );
 
 // ======================================================
-// STATISTIQUES
-//
-// IMPORTANT :
-// cette route DOIT être placée
-// AVANT /:id
-//
-// GET /api/departments/stats/all
-// ======================================================
-
-router.get(
-  "/stats/all",
-  requireFeature("departments"),
-  getDepartmentStats
-);
-
-// ======================================================
-// UN DÉPARTEMENT
-// GET /api/departments/:id
-// ======================================================
-
-router.get(
-  "/:id",
-  requireFeature("departments"),
-  getDepartmentById
-);
-
-// ======================================================
-// CRÉER
-//
+// CRÉER UN DÉPARTEMENT
 // POST /api/departments
 //
 // FREE      = 5 départements maximum
@@ -123,7 +139,9 @@ router.get(
 
 router.post(
   "/",
-  requireFeature("departments"),
+  requireFeature(
+    "departments"
+  ),
 
   authorizeRoles(
     "admin",
@@ -131,22 +149,110 @@ router.post(
   ),
 
   enforceResourceLimit({
-    resource: "departments",
-    Model: Department,
+    resource:
+      "departments",
+
+    Model:
+      Department,
   }),
 
   createDepartment
 );
 
 // ======================================================
-// MODIFIER
+// AJOUTER UNE PERSONNE AU DÉPARTEMENT
+// POST /api/departments/:id/members
+//
+// admin + manager
+// ======================================================
+
+router.post(
+  "/:id/members",
+
+  requireFeature(
+    "departments"
+  ),
+
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+
+  addMemberToDepartment
+);
+
+// ======================================================
+// MODIFIER LA RESPONSABILITÉ D'UNE PERSONNE
+// PUT /api/departments/:id/members/:memberId
+//
+// admin + manager
+// ======================================================
+
+router.put(
+  "/:id/members/:memberId",
+
+  requireFeature(
+    "departments"
+  ),
+
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+
+  updateDepartmentMember
+);
+
+// ======================================================
+// RETIRER UNE PERSONNE DU DÉPARTEMENT
+// DELETE /api/departments/:id/members/:memberId
+//
+// admin + manager
+// ======================================================
+
+router.delete(
+  "/:id/members/:memberId",
+
+  requireFeature(
+    "departments"
+  ),
+
+  authorizeRoles(
+    "admin",
+    "manager"
+  ),
+
+  removeMemberFromDepartment
+);
+
+// ======================================================
+// UN DÉPARTEMENT
+// GET /api/departments/:id
+// ======================================================
+
+router.get(
+  "/:id",
+
+  requireFeature(
+    "departments"
+  ),
+
+  getDepartmentById
+);
+
+// ======================================================
+// MODIFIER UN DÉPARTEMENT
 // PUT /api/departments/:id
+//
 // admin + manager
 // ======================================================
 
 router.put(
   "/:id",
-  requireFeature("departments"),
+
+  requireFeature(
+    "departments"
+  ),
 
   authorizeRoles(
     "admin",
@@ -157,14 +263,18 @@ router.put(
 );
 
 // ======================================================
-// SUPPRIMER
+// SUPPRIMER UN DÉPARTEMENT
 // DELETE /api/departments/:id
+//
 // admin uniquement
 // ======================================================
 
 router.delete(
   "/:id",
-  requireFeature("departments"),
+
+  requireFeature(
+    "departments"
+  ),
 
   authorizeRoles(
     "admin"
@@ -177,4 +287,5 @@ router.delete(
 // EXPORT
 // ======================================================
 
-module.exports = router;
+module.exports =
+  router;

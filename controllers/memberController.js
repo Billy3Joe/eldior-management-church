@@ -12,6 +12,10 @@ const createActivityLog = require(
   "../utils/createActivityLog"
 );
 
+const createPersonHistory = require(
+  "../utils/createPersonHistory"
+);
+
 // ======================================================
 // CONSTANTES
 // ======================================================
@@ -224,9 +228,7 @@ const validateDepartment =
     departmentId,
     churchId
   ) => {
-    if (
-      !departmentId
-    ) {
+    if (!departmentId) {
       return {
         valid: true,
         department: null,
@@ -234,10 +236,9 @@ const validateDepartment =
     }
 
     if (
-      !mongoose.Types.ObjectId
-        .isValid(
-          departmentId
-        )
+      !mongoose.Types.ObjectId.isValid(
+        departmentId
+      )
     ) {
       return {
         valid: false,
@@ -248,11 +249,8 @@ const validateDepartment =
 
     const department =
       await Department.findOne({
-        _id:
-          departmentId,
-
-        church:
-          churchId,
+        _id: departmentId,
+        church: churchId,
       });
 
     if (!department) {
@@ -270,7 +268,7 @@ const validateDepartment =
   };
 
 // ======================================================
-// CRÉER UN MEMBRE
+// CRÉER UN MEMBRE / VISITEUR
 // ======================================================
 
 const createMember =
@@ -284,7 +282,6 @@ const createMember =
           .status(403)
           .json({
             success: false,
-
             message:
               "Aucune église associée à cet utilisateur",
           });
@@ -329,15 +326,12 @@ const createMember =
 
       if (
         !firstName ||
-        !String(
-          firstName
-        ).trim()
+        !String(firstName).trim()
       ) {
         return res
           .status(400)
           .json({
             success: false,
-
             message:
               "Le prénom est obligatoire",
           });
@@ -345,15 +339,12 @@ const createMember =
 
       if (
         !lastName ||
-        !String(
-          lastName
-        ).trim()
+        !String(lastName).trim()
       ) {
         return res
           .status(400)
           .json({
             success: false,
-
             message:
               "Le nom est obligatoire",
           });
@@ -372,7 +363,6 @@ const createMember =
           .status(400)
           .json({
             success: false,
-
             message:
               "Sexe invalide",
           });
@@ -387,7 +377,6 @@ const createMember =
           .status(400)
           .json({
             success: false,
-
             message:
               "Statut du membre invalide",
           });
@@ -402,7 +391,6 @@ const createMember =
           .status(400)
           .json({
             success: false,
-
             message:
               "Profil invalide : utilisez Membre ou Visiteur",
           });
@@ -425,7 +413,6 @@ const createMember =
           .status(400)
           .json({
             success: false,
-
             message:
               departmentCheck.message,
           });
@@ -454,7 +441,6 @@ const createMember =
             .status(400)
             .json({
               success: false,
-
               message:
                 "Date de naissance invalide",
             });
@@ -469,15 +455,13 @@ const createMember =
           getAgeGroup(
             age
           );
-      } else {
-        if (
-          !AGE_GROUPS.includes(
-            ageGroup
-          )
-        ) {
-          finalAgeGroup =
-            "Non renseigné";
-        }
+      } else if (
+        !AGE_GROUPS.includes(
+          ageGroup
+        )
+      ) {
+        finalAgeGroup =
+          "Non renseigné";
       }
 
       // ==================================================
@@ -522,7 +506,6 @@ const createMember =
           .status(400)
           .json({
             success: false,
-
             message:
               "Statut de suivi invalide",
           });
@@ -539,16 +522,14 @@ const createMember =
         followUpAssignedTo
       ) {
         if (
-          !mongoose.Types.ObjectId
-            .isValid(
-              followUpAssignedTo
-            )
+          !mongoose.Types.ObjectId.isValid(
+            followUpAssignedTo
+          )
         ) {
           return res
             .status(400)
             .json({
               success: false,
-
               message:
                 "Utilisateur de suivi invalide",
             });
@@ -650,6 +631,83 @@ const createMember =
             ),
         });
 
+      // ==================================================
+      // HISTORIQUE PERSONNE : CRÉATION
+      // ==================================================
+
+      await createPersonHistory({
+        req,
+
+        churchId:
+          req.churchId,
+
+        memberId:
+          member._id,
+
+        type:
+          "PERSON_CREATED",
+
+        category:
+          "Identité",
+
+        title:
+          membershipType ===
+          "Visiteur"
+            ? "Profil visiteur créé"
+            : "Profil membre créé",
+
+        description:
+          `${member.firstName} ${member.lastName} a été ajouté à l'église comme ${membershipType.toLowerCase()}.`,
+
+        occurredAt:
+          member.createdAt ||
+          new Date(),
+
+        previousValue:
+          null,
+
+        newValue:
+          membershipType,
+
+        sourceType:
+          "Member",
+
+        sourceId:
+          member._id,
+
+        metadata: {
+          firstName:
+            member.firstName,
+
+          lastName:
+            member.lastName,
+
+          membershipType:
+            member.membershipType,
+
+          status:
+            member.status,
+
+          membershipDate:
+            member.membershipDate ||
+            null,
+
+          followUpStatus:
+            member.followUpStatus ||
+            null,
+
+          department:
+            member.department ||
+            null,
+        },
+
+        origin:
+          "automatic",
+
+        visibility:
+          "standard",
+      });
+
       const populatedMember =
         await getPopulatedMember(
           member._id,
@@ -700,7 +758,6 @@ const createMember =
           .status(400)
           .json({
             success: false,
-
             message:
               error.message,
           });
@@ -733,7 +790,6 @@ const getMembers =
           .status(403)
           .json({
             success: false,
-
             message:
               "Aucune église associée à cet utilisateur",
           });
@@ -787,7 +843,6 @@ const getMembers =
               firstName: {
                 $regex:
                   search,
-
                 $options:
                   "i",
               },
@@ -797,7 +852,6 @@ const getMembers =
               lastName: {
                 $regex:
                   search,
-
                 $options:
                   "i",
               },
@@ -807,7 +861,6 @@ const getMembers =
               email: {
                 $regex:
                   search,
-
                 $options:
                   "i",
               },
@@ -817,7 +870,6 @@ const getMembers =
               phone: {
                 $regex:
                   search,
-
                 $options:
                   "i",
               },
@@ -874,10 +926,9 @@ const getMembers =
 
       if (
         req.query.department &&
-        mongoose.Types.ObjectId
-          .isValid(
-            req.query.department
-          )
+        mongoose.Types.ObjectId.isValid(
+          req.query.department
+        )
       ) {
         filter.department =
           req.query.department;
@@ -946,7 +997,6 @@ const getMembers =
           Member.countDocuments({
             church:
               req.churchId,
-
             status:
               "Actif",
           }),
@@ -954,7 +1004,6 @@ const getMembers =
           Member.countDocuments({
             church:
               req.churchId,
-
             status:
               "Inactif",
           }),
@@ -962,7 +1011,6 @@ const getMembers =
           Member.countDocuments({
             church:
               req.churchId,
-
             membershipType:
               "Membre",
           }),
@@ -970,7 +1018,6 @@ const getMembers =
           Member.countDocuments({
             church:
               req.churchId,
-
             membershipType:
               "Visiteur",
           }),
@@ -982,9 +1029,7 @@ const getMembers =
           success: true,
 
           page,
-
           limit,
-
           total,
 
           totalPages:
@@ -1049,8 +1094,9 @@ const getMemberById =
       } = req.params;
 
       if (
-        !mongoose.Types.ObjectId
-          .isValid(id)
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
       ) {
         return res
           .status(400)
@@ -1083,7 +1129,6 @@ const getMemberById =
         .status(200)
         .json({
           success: true,
-
           data:
             member,
         });
@@ -1097,7 +1142,6 @@ const getMemberById =
         .status(500)
         .json({
           success: false,
-
           message:
             error.message,
         });
@@ -1119,8 +1163,9 @@ const updateMember =
       } = req.params;
 
       if (
-        !mongoose.Types.ObjectId
-          .isValid(id)
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
       ) {
         return res
           .status(400)
@@ -1135,7 +1180,6 @@ const updateMember =
       const member =
         await Member.findOne({
           _id: id,
-
           church:
             req.churchId,
         });
@@ -1145,11 +1189,28 @@ const updateMember =
           .status(404)
           .json({
             success: false,
-
             message:
               "Membre introuvable",
           });
       }
+
+      // ==================================================
+      // ÉTAT AVANT MODIFICATION
+      // ==================================================
+
+      const previousStatus =
+        member.status;
+
+      const previousMembershipType =
+        member.membershipType;
+
+      const previousMembershipDate =
+        member.membershipDate ||
+        null;
+
+      const previousFollowUpStatus =
+        member.followUpStatus ||
+        null;
 
       const {
         firstName,
@@ -1192,7 +1253,6 @@ const updateMember =
             .status(400)
             .json({
               success: false,
-
               message:
                 "Le prénom ne peut pas être vide",
             });
@@ -1217,7 +1277,6 @@ const updateMember =
             .status(400)
             .json({
               success: false,
-
               message:
                 "Le nom ne peut pas être vide",
             });
@@ -1242,7 +1301,6 @@ const updateMember =
             .status(400)
             .json({
               success: false,
-
               message:
                 "Sexe invalide",
             });
@@ -1271,7 +1329,7 @@ const updateMember =
 
           if (
             typeof ageGroup !==
-            "undefined" &&
+              "undefined" &&
             AGE_GROUPS.includes(
               ageGroup
             )
@@ -1295,7 +1353,6 @@ const updateMember =
               .status(400)
               .json({
                 success: false,
-
                 message:
                   "Date de naissance invalide",
               });
@@ -1316,7 +1373,7 @@ const updateMember =
         }
       } else if (
         typeof ageGroup !==
-        "undefined" &&
+          "undefined" &&
         !member.birthDate
       ) {
         if (
@@ -1328,7 +1385,6 @@ const updateMember =
             .status(400)
             .json({
               success: false,
-
               message:
                 "Tranche d'âge invalide",
             });
@@ -1407,7 +1463,6 @@ const updateMember =
               .status(400)
               .json({
                 success: false,
-
                 message:
                   departmentCheck.message,
               });
@@ -1436,7 +1491,6 @@ const updateMember =
             .status(400)
             .json({
               success: false,
-
               message:
                 "Statut invalide",
             });
@@ -1463,7 +1517,6 @@ const updateMember =
             .status(400)
             .json({
               success: false,
-
               message:
                 "Profil invalide",
             });
@@ -1490,7 +1543,7 @@ const updateMember =
 
         if (
           membershipType ===
-          "Membre" &&
+            "Membre" &&
           (
             member.followUpStatus ===
               "Non commencé" ||
@@ -1542,7 +1595,6 @@ const updateMember =
             .status(400)
             .json({
               success: false,
-
               message:
                 "Statut de suivi invalide",
             });
@@ -1563,16 +1615,14 @@ const updateMember =
             null;
         } else {
           if (
-            !mongoose.Types.ObjectId
-              .isValid(
-                followUpAssignedTo
-              )
+            !mongoose.Types.ObjectId.isValid(
+              followUpAssignedTo
+            )
           ) {
             return res
               .status(400)
               .json({
                 success: false,
-
                 message:
                   "Utilisateur de suivi invalide",
               });
@@ -1619,6 +1669,138 @@ const updateMember =
       // ==================================================
 
       await member.save();
+
+      const historyDate =
+        new Date();
+
+      // ==================================================
+      // HISTORIQUE : STATUT ACTIF / INACTIF
+      // ==================================================
+
+      if (
+        previousStatus !==
+        member.status
+      ) {
+        await createPersonHistory({
+          req,
+
+          churchId:
+            req.churchId,
+
+          memberId:
+            member._id,
+
+          type:
+            "STATUS_CHANGED",
+
+          category:
+            "Administration",
+
+          title:
+            `Statut : ${previousStatus} → ${member.status}`,
+
+          description:
+            `Le statut de ${member.firstName} ${member.lastName} est passé de « ${previousStatus} » à « ${member.status} ».`,
+
+          occurredAt:
+            historyDate,
+
+          previousValue:
+            previousStatus,
+
+          newValue:
+            member.status,
+
+          sourceType:
+            "Member",
+
+          sourceId:
+            member._id,
+
+          metadata: {
+            previousStatus,
+            newStatus:
+              member.status,
+          },
+
+          origin:
+            "automatic",
+
+          visibility:
+            "standard",
+        });
+      }
+
+      // ==================================================
+      // HISTORIQUE : MEMBRE / VISITEUR
+      // ==================================================
+
+      if (
+        previousMembershipType !==
+        member.membershipType
+      ) {
+        await createPersonHistory({
+          req,
+
+          churchId:
+            req.churchId,
+
+          memberId:
+            member._id,
+
+          type:
+            "MEMBERSHIP_CHANGED",
+
+          category:
+            "Intégration",
+
+          title:
+            `Profil : ${previousMembershipType} → ${member.membershipType}`,
+
+          description:
+            `${member.firstName} ${member.lastName} est passé du profil « ${previousMembershipType} » au profil « ${member.membershipType} ».`,
+
+          occurredAt:
+            historyDate,
+
+          previousValue:
+            previousMembershipType,
+
+          newValue:
+            member.membershipType,
+
+          sourceType:
+            "Member",
+
+          sourceId:
+            member._id,
+
+          metadata: {
+            previousMembershipType,
+
+            newMembershipType:
+              member.membershipType,
+
+            previousMembershipDate,
+
+            newMembershipDate:
+              member.membershipDate ||
+              null,
+
+            previousFollowUpStatus,
+
+            newFollowUpStatus:
+              member.followUpStatus ||
+              null,
+          },
+
+          origin:
+            "automatic",
+
+          visibility:
+            "standard",
+        });
+      }
 
       const updatedMember =
         await getPopulatedMember(
@@ -1667,7 +1849,6 @@ const updateMember =
           .status(400)
           .json({
             success: false,
-
             message:
               error.message,
           });
@@ -1700,8 +1881,9 @@ const deleteMember =
       } = req.params;
 
       if (
-        !mongoose.Types.ObjectId
-          .isValid(id)
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
       ) {
         return res
           .status(400)
@@ -1716,7 +1898,6 @@ const deleteMember =
       const member =
         await Member.findOne({
           _id: id,
-
           church:
             req.churchId,
         });
@@ -1726,7 +1907,6 @@ const deleteMember =
           .status(404)
           .json({
             success: false,
-
             message:
               "Membre introuvable",
           });
@@ -1738,6 +1918,10 @@ const deleteMember =
        *
        * Les statistiques d'église peuvent avoir
        * besoin de conserver l'historique.
+       *
+       * À terme, pour une architecture SaaS
+       * de production, on privilégiera
+       * l'archivage à la suppression physique.
        */
 
       const memberName =

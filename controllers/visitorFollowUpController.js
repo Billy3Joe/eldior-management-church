@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const Member = require("../models/Member");
 const User = require("../models/User");
 const createActivityLog = require("../utils/createActivityLog");
+const createPersonHistory = require("../utils/createPersonHistory");
 
 // ======================================================
 // CONSTANTES
@@ -253,19 +254,11 @@ const getVisitorFollowUpStats = async (
       upcomingFollowUps,
       recentVisitors,
     ] = await Promise.all([
-      // ----------------------------------------------
-      // Visiteurs actuellement non intégrés
-      // ----------------------------------------------
-
       Member.countDocuments({
         church,
         membershipType:
           "Visiteur",
       }),
-
-      // ----------------------------------------------
-      // À contacter
-      // ----------------------------------------------
 
       Member.countDocuments({
         church,
@@ -276,10 +269,6 @@ const getVisitorFollowUpStats = async (
           "À contacter",
       }),
 
-      // ----------------------------------------------
-      // Contactés
-      // ----------------------------------------------
-
       Member.countDocuments({
         church,
         membershipType:
@@ -289,10 +278,6 @@ const getVisitorFollowUpStats = async (
           "Contacté",
       }),
 
-      // ----------------------------------------------
-      // En suivi
-      // ----------------------------------------------
-
       Member.countDocuments({
         church,
         membershipType:
@@ -301,14 +286,6 @@ const getVisitorFollowUpStats = async (
         followUpStatus:
           "En suivi",
       }),
-
-      // ----------------------------------------------
-      // ANCIENS VISITEURS DEVENUS MEMBRES
-      //
-      // Important :
-      // on ne compte PAS les membres créés
-      // directement comme membres.
-      // ----------------------------------------------
 
       Member.countDocuments({
         church,
@@ -326,10 +303,6 @@ const getVisitorFollowUpStats = async (
           "Intégré",
       }),
 
-      // ----------------------------------------------
-      // Suivis clôturés
-      // ----------------------------------------------
-
       Member.countDocuments({
         church,
         membershipType:
@@ -338,10 +311,6 @@ const getVisitorFollowUpStats = async (
         followUpStatus:
           "Clôturé",
       }),
-
-      // ----------------------------------------------
-      // Relances en retard
-      // ----------------------------------------------
 
       Member.countDocuments({
         church,
@@ -361,10 +330,6 @@ const getVisitorFollowUpStats = async (
         },
       }),
 
-      // ----------------------------------------------
-      // Relances à venir
-      // ----------------------------------------------
-
       Member.countDocuments({
         church,
 
@@ -383,10 +348,6 @@ const getVisitorFollowUpStats = async (
         },
       }),
 
-      // ----------------------------------------------
-      // Nouveaux visiteurs des 30 derniers jours
-      // ----------------------------------------------
-
       Member.countDocuments({
         church,
 
@@ -399,13 +360,6 @@ const getVisitorFollowUpStats = async (
         },
       }),
     ]);
-
-    // ==================================================
-    // TAUX D'INTÉGRATION
-    //
-    // Population historique connue :
-    // visiteurs actuels + anciens visiteurs intégrés.
-    // ==================================================
 
     const totalVisitorJourney =
       totalVisitors +
@@ -604,11 +558,6 @@ const updateVisitorFollowUp = async (
         });
       }
 
-      /*
-       * L'intégration doit passer par
-       * /:id/integrate afin de conserver
-       * correctement l'historique.
-       */
       if (
         followUpStatus ===
         "Intégré"
@@ -894,23 +843,99 @@ const markVisitorAsContacted = async (
       });
     }
 
+    const contactDate =
+      new Date();
+
+    const previousFollowUpStatus =
+      visitor.followUpStatus ||
+      "Non commencé";
+
+    const previousLastContactDate =
+      visitor.lastContactDate ||
+      null;
+
+    const contactNote =
+      req.body &&
+      typeof req.body.note ===
+        "string"
+        ? req.body.note.trim()
+        : "";
+
     visitor.followUpStatus =
       "Contacté";
 
     visitor.lastContactDate =
-      new Date();
+      contactDate;
 
-    if (
-      req.body &&
-      typeof req.body.note ===
-        "string" &&
-      req.body.note.trim()
-    ) {
+    if (contactNote) {
       visitor.followUpNote =
-        req.body.note.trim();
+        contactNote;
     }
 
     await visitor.save();
+
+    // ==================================================
+    // HISTORIQUE PERSONNE
+    // ==================================================
+
+    await createPersonHistory({
+      req,
+
+      churchId:
+        req.churchId,
+
+      memberId:
+        visitor._id,
+
+      type:
+        "VISITOR_CONTACT",
+
+      category:
+        "Visiteur",
+
+      title:
+        "Contact avec le visiteur",
+
+      description:
+        `${visitor.firstName} ${visitor.lastName} a été contacté dans le cadre de son suivi.`,
+
+      occurredAt:
+        contactDate,
+
+      previousValue:
+        previousFollowUpStatus,
+
+      newValue:
+        "Contacté",
+
+      sourceType:
+        "VisitorFollowUp",
+
+      sourceId:
+        visitor._id,
+
+      metadata: {
+        previousFollowUpStatus,
+
+        newFollowUpStatus:
+          "Contacté",
+
+        previousLastContactDate,
+
+        contactDate,
+
+        note:
+          contactNote ||
+          visitor.followUpNote ||
+          "",
+      },
+
+      origin:
+        "automatic",
+
+      visibility:
+        "standard",
+    });
 
     const updatedVisitor =
       await Member.findOne({
@@ -1019,6 +1044,13 @@ const integrateVisitor = async (
     const integrationDate =
       new Date();
 
+    const previousMembershipType =
+      visitor.membershipType;
+
+    const previousFollowUpStatus =
+      visitor.followUpStatus ||
+      "Non commencé";
+
     // ==================================================
     // CONSERVATION DE L'HISTORIQUE
     // ==================================================
@@ -1046,6 +1078,82 @@ const integrateVisitor = async (
       null;
 
     await visitor.save();
+
+    // ==================================================
+    // HISTORIQUE PERSONNE
+    // ==================================================
+
+    await createPersonHistory({
+      req,
+
+      churchId:
+        req.churchId,
+
+      memberId:
+        visitor._id,
+
+      type:
+        "VISITOR_INTEGRATED",
+
+      category:
+        "Intégration",
+
+      title:
+        "Visiteur intégré comme membre",
+
+      description:
+        `${visitor.firstName} ${visitor.lastName} est passé du statut de visiteur à celui de membre.`,
+
+      occurredAt:
+        integrationDate,
+
+      previousValue:
+        previousMembershipType,
+
+      newValue:
+        "Membre",
+
+      sourceType:
+        "VisitorFollowUp",
+
+      sourceId:
+        visitor._id,
+
+      metadata: {
+        previousMembershipType,
+
+        newMembershipType:
+          "Membre",
+
+        previousFollowUpStatus,
+
+        newFollowUpStatus:
+          "Intégré",
+
+        firstVisitDate:
+          visitor.firstVisitDate ||
+          null,
+
+        integratedAt:
+          integrationDate,
+
+        membershipDate:
+          integrationDate,
+
+        wasVisitor:
+          true,
+
+        followUpAssignedTo:
+          visitor.followUpAssignedTo ||
+          null,
+      },
+
+      origin:
+        "automatic",
+
+      visibility:
+        "standard",
+    });
 
     const integratedMember =
       await Member.findOne({

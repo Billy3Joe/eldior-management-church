@@ -7,6 +7,9 @@ const Group =
 const Member =
   require("../models/Member");
 
+const createPersonHistory =
+  require("../utils/createPersonHistory");
+
 // ======================================================
 // HELPERS
 // ======================================================
@@ -98,10 +101,6 @@ const createGroup =
           });
       }
 
-      // ==================================================
-      // RESPONSABLE
-      // ==================================================
-
       let validLeader =
         null;
 
@@ -125,10 +124,6 @@ const createGroup =
         validLeader =
           member._id;
       }
-
-      // ==================================================
-      // ASSISTANTS
-      // ==================================================
 
       let validAssistants =
         [];
@@ -187,10 +182,6 @@ const createGroup =
           );
         }
       }
-
-      // ==================================================
-      // CRÉATION
-      // ==================================================
 
       const group =
         await Group.create({
@@ -675,10 +666,6 @@ const updateGroup =
         }
       );
 
-      // ==================================================
-      // RESPONSABLE
-      // ==================================================
-
       if (
         Object.prototype.hasOwnProperty.call(
           req.body,
@@ -712,10 +699,6 @@ const updateGroup =
             leader._id;
         }
       }
-
-      // ==================================================
-      // ASSISTANTS
-      // ==================================================
 
       if (
         Object.prototype.hasOwnProperty.call(
@@ -932,6 +915,35 @@ const addMemberToGroup =
         note = "",
       } = req.body;
 
+      if (
+        !isValidObjectId(
+          req.params.id
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Identifiant du groupe invalide.",
+          });
+      }
+
+      if (
+        !memberId ||
+        !isValidObjectId(
+          memberId
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Sélectionnez une personne valide.",
+          });
+      }
+
       const group =
         await Group.findOne({
           _id: req.params.id,
@@ -977,6 +989,9 @@ const addMemberToGroup =
           existing.isActive ===
           false
         ) {
+          const joinedAt =
+            new Date();
+
           existing.isActive =
             true;
 
@@ -984,16 +999,75 @@ const addMemberToGroup =
             role;
 
           existing.joinedAt =
-            new Date();
+            joinedAt;
 
           existing.note =
-            note.trim();
+            normalizeText(
+              note
+            ) || "";
 
           group.updatedBy =
             req.user?._id ||
             null;
 
           await group.save();
+
+          // ==============================================
+          // HISTORIQUE PERSONNE 360°
+          // RÉINTÉGRATION
+          // ==============================================
+
+          await createPersonHistory({
+            req,
+
+            memberId:
+              member._id,
+
+            type:
+              "GROUP_JOINED",
+
+            category:
+              "Groupe",
+
+            title:
+              `Réintégration dans ${group.name}`,
+
+            description:
+              `${member.firstName} ${member.lastName} a réintégré le groupe ${group.name}.`,
+
+            occurredAt:
+              joinedAt,
+
+            newValue:
+              role,
+
+            sourceType:
+              "Group",
+
+            sourceId:
+              group._id,
+
+            metadata: {
+              groupName:
+                group.name,
+
+              groupType:
+                group.type,
+
+              role,
+
+              note:
+                normalizeText(
+                  note
+                ) || "",
+
+              reactivated:
+                true,
+            },
+
+            origin:
+              "automatic",
+          });
 
           return res.json({
             success: true,
@@ -1032,6 +1106,9 @@ const addMemberToGroup =
           });
       }
 
+      const joinedAt =
+        new Date();
+
       group.members.push({
         member:
           member._id,
@@ -1039,10 +1116,11 @@ const addMemberToGroup =
         role,
 
         note:
-          note.trim(),
+          normalizeText(
+            note
+          ) || "",
 
-        joinedAt:
-          new Date(),
+        joinedAt,
 
         isActive: true,
       });
@@ -1052,6 +1130,62 @@ const addMemberToGroup =
         null;
 
       await group.save();
+
+      // ==================================================
+      // HISTORIQUE PERSONNE 360°
+      // ==================================================
+
+      await createPersonHistory({
+        req,
+
+        memberId:
+          member._id,
+
+        type:
+          "GROUP_JOINED",
+
+        category:
+          "Groupe",
+
+        title:
+          `Entrée dans le groupe ${group.name}`,
+
+        description:
+          `${member.firstName} ${member.lastName} a rejoint le groupe ${group.name}.`,
+
+        occurredAt:
+          joinedAt,
+
+        newValue:
+          role,
+
+        sourceType:
+          "Group",
+
+        sourceId:
+          group._id,
+
+        metadata: {
+          groupName:
+            group.name,
+
+          groupType:
+            group.type,
+
+          role,
+
+          note:
+            normalizeText(
+              note
+            ) || "",
+
+          reactivated:
+            false,
+        },
+
+        origin:
+          "automatic",
+      });
 
       return res
         .status(201)
@@ -1086,12 +1220,44 @@ const addMemberToGroup =
 const updateGroupMember =
   async (req, res) => {
     try {
-      const group =
-        await Group.findOne({
-          _id: req.params.id,
-          church:
-            req.churchId,
-        });
+      const {
+        id,
+        memberId,
+      } = req.params;
+
+      if (
+        !isValidObjectId(
+          id
+        ) ||
+        !isValidObjectId(
+          memberId
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Identifiant invalide.",
+          });
+      }
+
+      const [
+        group,
+        member,
+      ] =
+        await Promise.all([
+          Group.findOne({
+            _id: id,
+            church:
+              req.churchId,
+          }),
+
+          findChurchMember(
+            memberId,
+            req.churchId
+          ),
+        ]);
 
       if (!group) {
         return res
@@ -1103,11 +1269,23 @@ const updateGroupMember =
           });
       }
 
+      if (!member) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Personne introuvable dans cette église.",
+          });
+      }
+
       const entry =
         group.members.find(
           (item) =>
             item.member.toString() ===
-            req.params.memberId
+              memberId &&
+            item.isActive !==
+              false
         );
 
       if (!entry) {
@@ -1116,15 +1294,33 @@ const updateGroupMember =
           .json({
             success: false,
             message:
-              "Cette personne n'appartient pas à ce groupe.",
+              "Cette personne n'est pas active dans ce groupe.",
           });
       }
+
+      // ==================================================
+      // SNAPSHOT AVANT MODIFICATION
+      // ==================================================
+
+      const previousRole =
+        entry.role ||
+        "Membre";
+
+      const previousNote =
+        entry.note ||
+        "";
+
+      // ==================================================
+      // MODIFICATIONS
+      // ==================================================
 
       if (
         req.body.role
       ) {
         entry.role =
-          req.body.role;
+          normalizeText(
+            req.body.role
+          );
       }
 
       if (
@@ -1139,20 +1335,93 @@ const updateGroupMember =
           ) || "";
       }
 
-      if (
-        typeof req.body
-          .isActive ===
-        "boolean"
-      ) {
-        entry.isActive =
-          req.body.isActive;
-      }
+      const newRole =
+        entry.role ||
+        "Membre";
+
+      const newNote =
+        entry.note ||
+        "";
+
+      const roleChanged =
+        previousRole !==
+        newRole;
+
+      const noteChanged =
+        previousNote !==
+        newNote;
 
       group.updatedBy =
         req.user?._id ||
         null;
 
       await group.save();
+
+      // ==================================================
+      // HISTORIQUE PERSONNE 360°
+      //
+      // Une modification de note seule ne crée pas
+      // d'événement dans la timeline principale.
+      // ==================================================
+
+      if (roleChanged) {
+        await createPersonHistory({
+          req,
+
+          memberId:
+            member._id,
+
+          type:
+            "GROUP_ROLE_CHANGED",
+
+          category:
+            "Groupe",
+
+          title:
+            `Rôle modifié dans ${group.name}`,
+
+          description:
+            `${member.firstName} ${member.lastName} a changé de rôle dans le groupe ${group.name}.`,
+
+          occurredAt:
+            new Date(),
+
+          previousValue:
+            previousRole,
+
+          newValue:
+            newRole,
+
+          sourceType:
+            "Group",
+
+          sourceId:
+            group._id,
+
+          metadata: {
+            groupName:
+              group.name,
+
+            groupType:
+              group.type,
+
+            previousRole,
+
+            newRole,
+
+            previousNote,
+
+            newNote,
+
+            roleChanged,
+
+            noteChanged,
+          },
+
+          origin:
+            "automatic",
+        });
+      }
 
       return res.json({
         success: true,
@@ -1185,12 +1454,44 @@ const updateGroupMember =
 const removeMemberFromGroup =
   async (req, res) => {
     try {
-      const group =
-        await Group.findOne({
-          _id: req.params.id,
-          church:
-            req.churchId,
-        });
+      const {
+        id,
+        memberId,
+      } = req.params;
+
+      if (
+        !isValidObjectId(
+          id
+        ) ||
+        !isValidObjectId(
+          memberId
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Identifiant invalide.",
+          });
+      }
+
+      const [
+        group,
+        member,
+      ] =
+        await Promise.all([
+          Group.findOne({
+            _id: id,
+            church:
+              req.churchId,
+          }),
+
+          findChurchMember(
+            memberId,
+            req.churchId
+          ),
+        ]);
 
       if (!group) {
         return res
@@ -1202,11 +1503,23 @@ const removeMemberFromGroup =
           });
       }
 
+      if (!member) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            message:
+              "Personne introuvable dans cette église.",
+          });
+      }
+
       const entry =
         group.members.find(
           (item) =>
             item.member.toString() ===
-            req.params.memberId
+              memberId &&
+            item.isActive !==
+              false
         );
 
       if (!entry) {
@@ -1215,19 +1528,112 @@ const removeMemberFromGroup =
           .json({
             success: false,
             message:
-              "Cette personne n'appartient pas à ce groupe.",
+              "Cette personne n'est pas active dans ce groupe.",
           });
       }
 
-      // On conserve l'historique
+      const previousRole =
+        entry.role ||
+        "Membre";
+
+      const previousNote =
+        entry.note ||
+        "";
+
+      const joinedAt =
+        entry.joinedAt ||
+        null;
+
+      const leftAt =
+        new Date();
+
+      // ==================================================
+      // ON CONSERVE L'HISTORIQUE DE PARTICIPATION
+      // ==================================================
+
       entry.isActive =
         false;
+
+      // Si le modèle Group possède leftAt,
+      // Mongoose conservera cette valeur.
+      // Sinon l'historique PersonHistory reste la
+      // source durable de la date de sortie.
+      if (
+        Object.prototype.hasOwnProperty.call(
+          entry.toObject
+            ? entry.toObject()
+            : entry,
+          "leftAt"
+        )
+      ) {
+        entry.leftAt =
+          leftAt;
+      }
 
       group.updatedBy =
         req.user?._id ||
         null;
 
       await group.save();
+
+      // ==================================================
+      // HISTORIQUE PERSONNE 360°
+      // ==================================================
+
+      await createPersonHistory({
+        req,
+
+        memberId:
+          member._id,
+
+        type:
+          "GROUP_LEFT",
+
+        category:
+          "Groupe",
+
+        title:
+          `Départ du groupe ${group.name}`,
+
+        description:
+          `${member.firstName} ${member.lastName} a quitté le groupe ${group.name}.`,
+
+        occurredAt:
+          leftAt,
+
+        previousValue:
+          previousRole,
+
+        newValue:
+          "Hors groupe",
+
+        sourceType:
+          "Group",
+
+        sourceId:
+          group._id,
+
+        metadata: {
+          groupName:
+            group.name,
+
+          groupType:
+            group.type,
+
+          role:
+            previousRole,
+
+          note:
+            previousNote,
+
+          joinedAt,
+
+          leftAt,
+        },
+
+        origin:
+          "automatic",
+      });
 
       return res.json({
         success: true,

@@ -36,6 +36,10 @@ require("./models/PastoralAlert");
 
 require("./models/Group");
 
+require("./models/Department");
+
+require("./models/PersonHistory");
+
 // ======================================================
 // SCHEDULER DES RAPPELS
 // ======================================================
@@ -79,11 +83,13 @@ app.use(
 
 app.get(
   "/",
+
   (req, res) => {
     return res
       .status(200)
       .json({
         success: true,
+
         message:
           "API ElDior Management Church opérationnelle",
       });
@@ -96,6 +102,7 @@ app.get(
 
 app.use(
   "/api/auth",
+
   require(
     "./routes/authRoutes"
   )
@@ -107,6 +114,7 @@ app.use(
 
 app.use(
   "/api/members",
+
   require(
     "./routes/memberRoutes"
   )
@@ -118,6 +126,7 @@ app.use(
 
 app.use(
   "/api/families",
+
   require(
     "./routes/familyRoutes"
   )
@@ -129,8 +138,21 @@ app.use(
 
 app.use(
   "/api/groups",
+
   require(
     "./routes/groupRoutes"
+  )
+);
+
+// ======================================================
+// DÉPARTEMENTS & RESPONSABILITÉS
+// ======================================================
+
+app.use(
+  "/api/departments",
+
+  require(
+    "./routes/departmentRoutes"
   )
 );
 
@@ -140,8 +162,21 @@ app.use(
 
 app.use(
   "/api/spiritual-journey",
+
   require(
     "./routes/spiritualJourneyRoutes"
+  )
+);
+
+// ======================================================
+// HISTORIQUE PERSONNE 360°
+// ======================================================
+
+app.use(
+  "/api/person-history",
+
+  require(
+    "./routes/personHistoryRoutes"
   )
 );
 
@@ -151,6 +186,7 @@ app.use(
 
 app.use(
   "/api/pastoral-alerts",
+
   require(
     "./routes/pastoralAlertRoutes"
   )
@@ -162,19 +198,9 @@ app.use(
 
 app.use(
   "/api/visitor-follow-up",
+
   require(
     "./routes/visitorFollowUpRoutes"
-  )
-);
-
-// ======================================================
-// DÉPARTEMENTS
-// ======================================================
-
-app.use(
-  "/api/departments",
-  require(
-    "./routes/departmentRoutes"
   )
 );
 
@@ -184,6 +210,7 @@ app.use(
 
 app.use(
   "/api/events",
+
   require(
     "./routes/eventRoutes"
   )
@@ -195,6 +222,7 @@ app.use(
 
 app.use(
   "/api/attendances",
+
   require(
     "./routes/attendanceRoutes"
   )
@@ -206,6 +234,7 @@ app.use(
 
 app.use(
   "/api/assignments",
+
   require(
     "./routes/assignmentRoutes"
   )
@@ -217,6 +246,7 @@ app.use(
 
 app.use(
   "/api/dashboard",
+
   require(
     "./routes/dashboardRoutes"
   )
@@ -228,6 +258,7 @@ app.use(
 
 app.use(
   "/api/reports",
+
   require(
     "./routes/reportRoutes"
   )
@@ -239,6 +270,7 @@ app.use(
 
 app.use(
   "/api/users",
+
   require(
     "./routes/userRoutes"
   )
@@ -250,6 +282,7 @@ app.use(
 
 app.use(
   "/api/activity-logs",
+
   require(
     "./routes/activityLogRoutes"
   )
@@ -261,6 +294,7 @@ app.use(
 
 app.use(
   "/api/settings",
+
   require(
     "./routes/settingsRoutes"
   )
@@ -272,6 +306,7 @@ app.use(
 
 app.use(
   "/api/subscription",
+
   require(
     "./routes/subscriptionRoutes"
   )
@@ -283,6 +318,7 @@ app.use(
 
 app.use(
   "/api/platform",
+
   require(
     "./routes/platformRoutes"
   )
@@ -298,6 +334,7 @@ app.use(
       .status(404)
       .json({
         success: false,
+
         message:
           `Route API introuvable : ${req.method} ${req.originalUrl}`,
       });
@@ -368,6 +405,7 @@ const startServer =
       const server =
         app.listen(
           PORT,
+
           () => {
             console.log(
               `🚀 Serveur lancé sur le port ${PORT}`
@@ -411,6 +449,7 @@ const startServer =
 
       process.on(
         "SIGINT",
+
         () =>
           shutdown(
             "SIGINT"
@@ -419,6 +458,7 @@ const startServer =
 
       process.on(
         "SIGTERM",
+
         () =>
           shutdown(
             "SIGTERM"
@@ -427,6 +467,7 @@ const startServer =
 
       process.on(
         "unhandledRejection",
+
         (error) => {
           console.error(
             "❌ Promesse non gérée :",
