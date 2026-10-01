@@ -3,9 +3,14 @@ const mongoose = require("mongoose");
 const Attendance = require("../models/Attendance");
 const Member = require("../models/Member");
 const Event = require("../models/Event");
+const PersonHistory = require("../models/PersonHistory");
 
 const createActivityLog = require(
   "../utils/createActivityLog"
+);
+
+const createPersonHistory = require(
+  "../utils/createPersonHistory"
 );
 
 // ======================================================
@@ -162,14 +167,11 @@ const safeCreateActivityLog =
 // RECALCUL HISTORIQUE VISITE
 // ======================================================
 
-// ======================================================
-// RECALCUL HISTORIQUE VISITE
-// ======================================================
-
 const recalculateMemberVisitHistory =
   async (
     churchId,
-    memberId
+    memberId,
+    req = null
   ) => {
     try {
       if (
@@ -188,7 +190,12 @@ const recalculateMemberVisitHistory =
           _id: memberId,
           church: churchId,
         }).select(
-          "membershipType wasVisitor"
+          [
+            "firstName",
+            "lastName",
+            "membershipType",
+            "wasVisitor",
+          ].join(" ")
         );
 
       if (!member) {
@@ -202,7 +209,9 @@ const recalculateMemberVisitHistory =
       const attendances =
         await Attendance.find({
           church: churchId,
+
           member: memberId,
+
           status: {
             $in:
               ATTENDED_STATUSES,
@@ -212,13 +221,20 @@ const recalculateMemberVisitHistory =
             [
               "_id",
               "event",
+              "status",
               "isFirstVisit",
               "membershipTypeSnapshot",
             ].join(" ")
           )
           .populate(
             "event",
-            "date"
+            [
+              "title",
+              "date",
+              "location",
+              "type",
+              "isSundayService",
+            ].join(" ")
           );
 
       const validAttendances =
@@ -239,7 +255,7 @@ const recalculateMemberVisitHistory =
           );
 
       // --------------------------------------------------
-      // Toujours nettoyer les anciens isFirstVisit
+      // Nettoyer tous les anciens isFirstVisit
       // --------------------------------------------------
 
       await Attendance.updateMany(
@@ -254,6 +270,9 @@ const recalculateMemberVisitHistory =
           },
         }
       );
+
+      const firstVisitDedupeKey =
+        `first-visit:${memberId}`;
 
       // --------------------------------------------------
       // Aucune présence réelle
@@ -281,6 +300,24 @@ const recalculateMemberVisitHistory =
           }
         );
 
+        // Si la dernière présence réelle a été
+        // corrigée ou supprimée, l'ancienne
+        // première visite ne doit plus apparaître.
+
+        await PersonHistory.deleteOne({
+          church:
+            churchId,
+
+          member:
+            memberId,
+
+          type:
+            "FIRST_VISIT",
+
+          dedupeKey:
+            firstVisitDedupeKey,
+        });
+
         return;
       }
 
@@ -294,8 +331,8 @@ const recalculateMemberVisitHistory =
         ];
 
       // --------------------------------------------------
-      // Déterminer si cette personne vient
-      // réellement d'un parcours visiteur
+      // Déterminer si la personne possède
+      // réellement un parcours visiteur
       // --------------------------------------------------
 
       const hasVisitorAttendance =
@@ -313,8 +350,7 @@ const recalculateMemberVisitHistory =
         hasVisitorAttendance;
 
       // --------------------------------------------------
-      // Seulement un visiteur peut avoir
-      // une "première visite"
+      // Première visite
       // --------------------------------------------------
 
       if (isVisitorJourney) {
@@ -336,7 +372,7 @@ const recalculateMemberVisitHistory =
       }
 
       // --------------------------------------------------
-      // Historique membre
+      // Mettre à jour Member
       // --------------------------------------------------
 
       await Member.updateOne(
@@ -364,9 +400,387 @@ const recalculateMemberVisitHistory =
           },
         }
       );
+
+      // --------------------------------------------------
+      // Si ce n'est pas un parcours visiteur,
+      // aucune FIRST_VISIT dans PersonHistory
+      // --------------------------------------------------
+
+      if (!isVisitorJourney) {
+        await PersonHistory.deleteOne({
+          church:
+            churchId,
+
+          member:
+            memberId,
+
+          type:
+            "FIRST_VISIT",
+
+          dedupeKey:
+            firstVisitDedupeKey,
+        });
+
+        return;
+      }
+
+      // --------------------------------------------------
+      // SYNCHRONISER FIRST_VISIT
+      // --------------------------------------------------
+
+      const firstEvent =
+        firstAttendance.event;
+
+      const fullName =
+        `${member.firstName || ""} ${member.lastName || ""}`
+          .trim() ||
+        "Cette personne";
+
+      const existingFirstVisit =
+        await PersonHistory.findOne({
+          church:
+            churchId,
+
+          member:
+            memberId,
+
+          type:
+            "FIRST_VISIT",
+
+          dedupeKey:
+            firstVisitDedupeKey,
+        });
+
+      const firstVisitPayload = {
+        category:
+          "Visiteur",
+
+        title:
+          "Première visite",
+
+        description:
+          `${fullName} a effectué sa première visite lors de « ${firstEvent.title || "Événement"} ».`,
+
+        occurredAt:
+          firstEvent.date,
+
+        previousValue:
+          "",
+
+        newValue:
+          "Première visite",
+
+        sourceType:
+          "Attendance",
+
+        sourceId:
+          firstAttendance._id,
+
+        metadata: {
+          attendanceId:
+            firstAttendance._id,
+
+          eventId:
+            firstEvent._id,
+
+          eventTitle:
+            firstEvent.title || "",
+
+          eventDate:
+            firstEvent.date,
+
+          eventLocation:
+            firstEvent.location || "",
+
+          eventType:
+            firstEvent.type || "",
+
+          isSundayService:
+            firstEvent.isSundayService ===
+            true,
+
+          attendanceStatus:
+            firstAttendance.status,
+
+          membershipTypeSnapshot:
+            firstAttendance
+              .membershipTypeSnapshot ||
+            "",
+        },
+
+        visibility:
+          "standard",
+      };
+
+      // --------------------------------------------------
+      // Si FIRST_VISIT existe déjà :
+      // on la synchronise.
+      //
+      // Exemple :
+      // une présence plus ancienne est ajoutée ensuite.
+      // --------------------------------------------------
+
+      if (existingFirstVisit) {
+        existingFirstVisit.category =
+          firstVisitPayload.category;
+
+        existingFirstVisit.title =
+          firstVisitPayload.title;
+
+        existingFirstVisit.description =
+          firstVisitPayload.description;
+
+        existingFirstVisit.occurredAt =
+          firstVisitPayload.occurredAt;
+
+        existingFirstVisit.previousValue =
+          firstVisitPayload.previousValue;
+
+        existingFirstVisit.newValue =
+          firstVisitPayload.newValue;
+
+        existingFirstVisit.sourceType =
+          firstVisitPayload.sourceType;
+
+        existingFirstVisit.sourceId =
+          firstVisitPayload.sourceId;
+
+        existingFirstVisit.metadata =
+          firstVisitPayload.metadata;
+
+        existingFirstVisit.visibility =
+          firstVisitPayload.visibility;
+
+        await existingFirstVisit.save();
+      } else {
+        await createPersonHistory({
+          req,
+
+          churchId,
+
+          memberId,
+
+          type:
+            "FIRST_VISIT",
+
+          ...firstVisitPayload,
+
+          dedupeKey:
+            firstVisitDedupeKey,
+
+          origin:
+            "automatic",
+        });
+      }
     } catch (error) {
       console.error(
         "Erreur recalcul historique visite :",
+        error.message
+      );
+    }
+  };
+
+// ======================================================
+// SYNCHRONISER UNE PRÉSENCE DANS PERSON HISTORY
+// ======================================================
+
+const syncAttendancePersonHistory =
+  async ({
+    req,
+
+    churchId,
+
+    attendanceId,
+
+    member,
+
+    event,
+
+    status,
+  }) => {
+    try {
+      if (
+        !churchId ||
+        !attendanceId ||
+        !member ||
+        !event
+      ) {
+        return;
+      }
+
+      const dedupeKey =
+        `attendance:${attendanceId}`;
+
+      // --------------------------------------------------
+      // Absent / Excusé
+      //
+      // On ne pollue pas l'historique complet
+      // avec ces statuts.
+      // --------------------------------------------------
+
+      if (
+        !ATTENDED_STATUSES.includes(
+          status
+        )
+      ) {
+        await PersonHistory.deleteOne({
+          church:
+            churchId,
+
+          member:
+            member._id,
+
+          type:
+            "ATTENDANCE_RECORDED",
+
+          dedupeKey,
+        });
+
+        return;
+      }
+
+      const fullName =
+        `${member.firstName || ""} ${member.lastName || ""}`
+          .trim() ||
+        "Cette personne";
+
+      // --------------------------------------------------
+      // Chercher une présence déjà historisée
+      // --------------------------------------------------
+
+      const existingHistory =
+        await PersonHistory.findOne({
+          church:
+            churchId,
+
+          member:
+            member._id,
+
+          type:
+            "ATTENDANCE_RECORDED",
+
+          dedupeKey,
+        });
+
+      const historyTitle =
+        status ===
+        "En retard"
+          ? "Présence enregistrée — En retard"
+          : "Présence enregistrée";
+
+      const historyDescription =
+        `${fullName} était ${status.toLowerCase()} lors de « ${event.title || "Événement"} ».`;
+
+      const historyMetadata = {
+        attendanceId,
+
+        eventId:
+          event._id,
+
+        eventTitle:
+          event.title || "",
+
+        eventDate:
+          event.date,
+
+        eventLocation:
+          event.location || "",
+
+        eventType:
+          event.type || "",
+
+        isSundayService:
+          event.isSundayService ===
+          true,
+
+        status,
+      };
+
+      // --------------------------------------------------
+      // Présence déjà dans l'historique :
+      // synchroniser sans créer de doublon
+      // --------------------------------------------------
+
+      if (existingHistory) {
+        existingHistory.title =
+          historyTitle;
+
+        existingHistory.description =
+          historyDescription;
+
+        existingHistory.occurredAt =
+          event.date;
+
+        existingHistory.newValue =
+          status;
+
+        existingHistory.sourceType =
+          "Attendance";
+
+        existingHistory.sourceId =
+          attendanceId;
+
+        existingHistory.metadata =
+          historyMetadata;
+
+        await existingHistory.save();
+
+        return;
+      }
+
+      // --------------------------------------------------
+      // Nouvelle présence réelle
+      // --------------------------------------------------
+
+      await createPersonHistory({
+        req,
+
+        churchId,
+
+        memberId:
+          member._id,
+
+        type:
+          "ATTENDANCE_RECORDED",
+
+        category:
+          "Présence",
+
+        title:
+          historyTitle,
+
+        description:
+          historyDescription,
+
+        occurredAt:
+          event.date,
+
+        previousValue:
+          "",
+
+        newValue:
+          status,
+
+        sourceType:
+          "Attendance",
+
+        sourceId:
+          attendanceId,
+
+        dedupeKey,
+
+        metadata:
+          historyMetadata,
+
+        origin:
+          "automatic",
+
+        visibility:
+          "standard",
+      });
+    } catch (error) {
+      console.error(
+        "Erreur synchronisation PersonHistory présence :",
         error.message
       );
     }
@@ -528,7 +942,6 @@ const buildEventStatistics =
         let ageGroup =
           "Non renseigné";
 
-        // Date de naissance prioritaire
         if (
           calculatedAge !==
           null
@@ -538,10 +951,7 @@ const buildEventStatistics =
               calculatedAge,
               "Non renseigné"
             );
-        }
-
-        // Puis tranche enregistrée dans Member
-        else if (
+        } else if (
           member?.ageGroup &&
           AGE_GROUPS.includes(
             member.ageGroup
@@ -549,10 +959,7 @@ const buildEventStatistics =
         ) {
           ageGroup =
             member.ageGroup;
-        }
-
-        // Puis snapshot historique
-        else if (
+        } else if (
           attendance
             .ageGroupSnapshot &&
           AGE_GROUPS.includes(
@@ -582,9 +989,6 @@ const buildEventStatistics =
 
         // ----------------------------------------------
         // MEMBRE / VISITEUR
-        //
-        // On privilégie la situation enregistrée
-        // au moment du culte.
         // ----------------------------------------------
 
         const membershipType =
@@ -607,31 +1011,31 @@ const buildEventStatistics =
         // ----------------------------------------------
 
         const isRealNewPerson =
-        attendance.isFirstVisit ===
-          true &&
-        (
-          attendance
-            .membershipTypeSnapshot ===
-            "Visiteur" ||
-          member?.wasVisitor ===
-            true
-        );
-      
-      if (isRealNewPerson) {
-        newPeople += 1;
-      
-        if (
-          gender === "Homme"
-        ) {
-          newMen += 1;
+          attendance.isFirstVisit ===
+            true &&
+          (
+            attendance
+              .membershipTypeSnapshot ===
+              "Visiteur" ||
+            member?.wasVisitor ===
+              true
+          );
+
+        if (isRealNewPerson) {
+          newPeople += 1;
+
+          if (
+            gender === "Homme"
+          ) {
+            newMen += 1;
+          }
+
+          if (
+            gender === "Femme"
+          ) {
+            newWomen += 1;
+          }
         }
-      
-        if (
-          gender === "Femme"
-        ) {
-          newWomen += 1;
-        }
-      }
       }
     );
 
@@ -950,10 +1354,38 @@ const markAttendance =
           }
         );
 
+      // --------------------------------------------------
+      // Recalcul première / dernière visite
+      // --------------------------------------------------
+
       await recalculateMemberVisitHistory(
         req.churchId,
-        member
+        member,
+        req
       );
+
+      // --------------------------------------------------
+      // Historique complet : présence
+      // --------------------------------------------------
+
+      await syncAttendancePersonHistory({
+        req,
+
+        churchId:
+          req.churchId,
+
+        attendanceId:
+          attendance._id,
+
+        member:
+          memberExists,
+
+        event:
+          eventExists,
+
+        status:
+          attendance.status,
+      });
 
       const populatedAttendance =
         await getPopulatedAttendance(
@@ -1395,10 +1827,69 @@ const updateAttendance =
 
       await attendance.save();
 
+      // --------------------------------------------------
+      // Recalcul première / dernière visite
+      // --------------------------------------------------
+
       await recalculateMemberVisitHistory(
         req.churchId,
-        attendance.member
+        attendance.member,
+        req
       );
+
+      // --------------------------------------------------
+      // Charger membre + événement pour PersonHistory
+      // --------------------------------------------------
+
+      const [
+        historyMember,
+        historyEvent,
+      ] =
+        await Promise.all([
+          Member.findOne({
+            _id:
+              attendance.member,
+
+            church:
+              req.churchId,
+          }),
+
+          Event.findOne({
+            _id:
+              attendance.event,
+
+            church:
+              req.churchId,
+          }),
+        ]);
+
+      // --------------------------------------------------
+      // Synchroniser ATTENDANCE_RECORDED
+      // --------------------------------------------------
+
+      if (
+        historyMember &&
+        historyEvent
+      ) {
+        await syncAttendancePersonHistory({
+          req,
+
+          churchId:
+            req.churchId,
+
+          attendanceId:
+            attendance._id,
+
+          member:
+            historyMember,
+
+          event:
+            historyEvent,
+
+          status:
+            attendance.status,
+        });
+      }
 
       const updated =
         await getPopulatedAttendance(
@@ -1499,11 +1990,38 @@ const deleteAttendance =
       const memberId =
         attendance.member;
 
+      // --------------------------------------------------
+      // Supprimer l'événement de présence de la timeline
+      // --------------------------------------------------
+
+      await PersonHistory.deleteOne({
+        church:
+          req.churchId,
+
+        member:
+          memberId,
+
+        type:
+          "ATTENDANCE_RECORDED",
+
+        dedupeKey:
+          `attendance:${attendance._id}`,
+      });
+
+      // --------------------------------------------------
+      // Supprimer la présence
+      // --------------------------------------------------
+
       await attendance.deleteOne();
+
+      // --------------------------------------------------
+      // Recalculer FIRST_VISIT / dates / compteur
+      // --------------------------------------------------
 
       await recalculateMemberVisitHistory(
         req.churchId,
-        memberId
+        memberId,
+        req
       );
 
       await safeCreateActivityLog({

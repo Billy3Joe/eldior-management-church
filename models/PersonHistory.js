@@ -8,28 +8,39 @@ const PERSON_HISTORY_TYPES = [
   "PERSON_CREATED",
 
   "FIRST_VISIT",
+
   "VISITOR_CONTACT",
+
   "VISITOR_INTEGRATED",
 
   "MEMBERSHIP_CHANGED",
+
   "STATUS_CHANGED",
 
   "SPIRITUAL_STAGE_CHANGED",
 
   "FAMILY_JOINED",
+
   "FAMILY_ROLE_CHANGED",
+
   "FAMILY_LEFT",
 
   "GROUP_JOINED",
+
   "GROUP_ROLE_CHANGED",
+
   "GROUP_LEFT",
 
   "DEPARTMENT_JOINED",
+
   "DEPARTMENT_RESPONSIBILITY_CHANGED",
+
   "DEPARTMENT_LEFT",
 
   "PASTORAL_ALERT_CREATED",
+
   "PASTORAL_ALERT_UPDATED",
+
   "PASTORAL_ALERT_RESOLVED",
 
   "ATTENDANCE_RECORDED",
@@ -45,16 +56,27 @@ const PERSON_HISTORY_TYPES = [
 
 const PERSON_HISTORY_CATEGORIES = [
   "Identité",
+
   "Visiteur",
+
   "Intégration",
+
   "Parcours spirituel",
+
   "Famille",
+
   "Groupe",
+
   "Département",
+
   "Responsabilité",
+
   "Présence",
+
   "Suivi pastoral",
+
   "Administration",
+
   "Autre",
 ];
 
@@ -172,10 +194,6 @@ const personHistorySchema =
 
       // ==================================================
       // VALEUR AVANT / APRÈS
-      //
-      // Exemple :
-      // Membre → Baptisé
-      // Serviteur → Coordinateur
       // ==================================================
 
       previousValue: {
@@ -196,16 +214,6 @@ const personHistorySchema =
 
       // ==================================================
       // SOURCE MÉTIER
-      //
-      // Permet de savoir d'où vient l'événement.
-      //
-      // Exemple :
-      // Department
-      // Group
-      // Family
-      // SpiritualJourney
-      // Attendance
-      // PastoralAlert
       // ==================================================
 
       sourceType: {
@@ -229,15 +237,32 @@ const personHistorySchema =
       },
 
       // ==================================================
-      // INFORMATIONS COMPLÉMENTAIRES
+      // CLÉ D'IDEMPOTENCE
       //
-      // Exemple :
-      // {
-      //   departmentName: "Accueil",
-      //   role: "Coordinateur",
-      //   responsibility:
-      //     "Coordination accueil principal"
-      // }
+      // Permet d'éviter qu'un même événement métier
+      // soit enregistré plusieurs fois.
+      //
+      // Exemples :
+      //
+      // first-visit:<memberId>
+      //
+      // attendance:<attendanceId>
+      //
+      // migration:family:<familyId>:<memberId>
+      //
+      // null = événement sans contrainte d'idempotence.
+      // ==================================================
+
+      dedupeKey: {
+        type: String,
+
+        default: null,
+
+        trim: true,
+      },
+
+      // ==================================================
+      // INFORMATIONS COMPLÉMENTAIRES
       // ==================================================
 
       metadata: {
@@ -291,9 +316,6 @@ const personHistorySchema =
 
       // ==================================================
       // VISIBILITÉ
-      //
-      // Prépare Eldior pour une future gestion
-      // fine des données pastorales sensibles.
       // ==================================================
 
       visibility: {
@@ -311,6 +333,7 @@ const personHistorySchema =
         index: true,
       },
     },
+
     {
       timestamps: true,
     }
@@ -353,6 +376,34 @@ personHistorySchema.index({
   sourceType: 1,
   sourceId: 1,
 });
+
+// ======================================================
+// INDEX D'IDEMPOTENCE
+//
+// IMPORTANT :
+// partialFilterExpression permet aux événements
+// historiques existants sans dedupeKey de continuer
+// à fonctionner normalement.
+//
+// En revanche, deux événements d'une même église
+// ne pourront pas partager la même dedupeKey.
+// ======================================================
+
+personHistorySchema.index(
+  {
+    church: 1,
+    dedupeKey: 1,
+  },
+  {
+    unique: true,
+
+    partialFilterExpression: {
+      dedupeKey: {
+        $type: "string",
+      },
+    },
+  }
+);
 
 // ======================================================
 // JSON

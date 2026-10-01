@@ -9,60 +9,49 @@ require("dotenv").config();
 // IMPORTS
 // ======================================================
 
-const express =
-  require("express");
-
-const cors =
-  require("cors");
-
-const connectDB =
-  require("./config/db");
+const express = require("express");
+const cors = require("cors");
+const connectDB = require("./config/db");
 
 // ======================================================
 // MODÈLES IMPORTÉS EXPLICITEMENT
 // ======================================================
 
 require("./models/Church");
-
 require("./models/User");
-
 require("./models/ChurchSettings");
-
 require("./models/Member");
-
 require("./models/Family");
-
 require("./models/PastoralAlert");
-
 require("./models/Group");
-
 require("./models/Department");
-
 require("./models/PersonHistory");
+
+// Finance
+require("./models/FinanceCategory");
+require("./models/FinanceAccount");
+require("./models/FinanceTransaction");
+require("./models/FinanceBudget");
 
 // ======================================================
 // SCHEDULER DES RAPPELS
 // ======================================================
 
-const startAssignmentReminderJob =
-  require(
-    "./jobs/assignmentReminderJob"
-  );
+const startAssignmentReminderJob = require(
+  "./jobs/assignmentReminderJob"
+);
 
 // ======================================================
 // APPLICATION EXPRESS
 // ======================================================
 
-const app =
-  express();
+const app = express();
 
 // ======================================================
 // MIDDLEWARES GLOBAUX
 // ======================================================
 
-app.use(
-  cors()
-);
+app.use(cors());
 
 app.use(
   express.json({
@@ -81,20 +70,12 @@ app.use(
 // ROUTE DE TEST
 // ======================================================
 
-app.get(
-  "/",
-
-  (req, res) => {
-    return res
-      .status(200)
-      .json({
-        success: true,
-
-        message:
-          "API ElDior Management Church opérationnelle",
-      });
-  }
-);
+app.get("/", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    message: "API ElDior Management Church opérationnelle",
+  });
+});
 
 // ======================================================
 // AUTHENTIFICATION
@@ -102,10 +83,7 @@ app.get(
 
 app.use(
   "/api/auth",
-
-  require(
-    "./routes/authRoutes"
-  )
+  require("./routes/authRoutes")
 );
 
 // ======================================================
@@ -114,10 +92,7 @@ app.use(
 
 app.use(
   "/api/members",
-
-  require(
-    "./routes/memberRoutes"
-  )
+  require("./routes/memberRoutes")
 );
 
 // ======================================================
@@ -126,10 +101,7 @@ app.use(
 
 app.use(
   "/api/families",
-
-  require(
-    "./routes/familyRoutes"
-  )
+  require("./routes/familyRoutes")
 );
 
 // ======================================================
@@ -138,10 +110,7 @@ app.use(
 
 app.use(
   "/api/groups",
-
-  require(
-    "./routes/groupRoutes"
-  )
+  require("./routes/groupRoutes")
 );
 
 // ======================================================
@@ -150,10 +119,7 @@ app.use(
 
 app.use(
   "/api/departments",
-
-  require(
-    "./routes/departmentRoutes"
-  )
+  require("./routes/departmentRoutes")
 );
 
 // ======================================================
@@ -162,10 +128,7 @@ app.use(
 
 app.use(
   "/api/spiritual-journey",
-
-  require(
-    "./routes/spiritualJourneyRoutes"
-  )
+  require("./routes/spiritualJourneyRoutes")
 );
 
 // ======================================================
@@ -174,10 +137,16 @@ app.use(
 
 app.use(
   "/api/person-history",
+  require("./routes/personHistoryRoutes")
+);
 
-  require(
-    "./routes/personHistoryRoutes"
-  )
+// ======================================================
+// BACKFILL HISTORIQUE PERSONNE 360°
+// ======================================================
+
+app.use(
+  "/api/person-history/backfill",
+  require("./routes/personHistoryBackfillRoutes")
 );
 
 // ======================================================
@@ -186,10 +155,7 @@ app.use(
 
 app.use(
   "/api/pastoral-alerts",
-
-  require(
-    "./routes/pastoralAlertRoutes"
-  )
+  require("./routes/pastoralAlertRoutes")
 );
 
 // ======================================================
@@ -198,10 +164,7 @@ app.use(
 
 app.use(
   "/api/visitor-follow-up",
-
-  require(
-    "./routes/visitorFollowUpRoutes"
-  )
+  require("./routes/visitorFollowUpRoutes")
 );
 
 // ======================================================
@@ -210,10 +173,7 @@ app.use(
 
 app.use(
   "/api/events",
-
-  require(
-    "./routes/eventRoutes"
-  )
+  require("./routes/eventRoutes")
 );
 
 // ======================================================
@@ -222,10 +182,7 @@ app.use(
 
 app.use(
   "/api/attendances",
-
-  require(
-    "./routes/attendanceRoutes"
-  )
+  require("./routes/attendanceRoutes")
 );
 
 // ======================================================
@@ -234,10 +191,7 @@ app.use(
 
 app.use(
   "/api/assignments",
-
-  require(
-    "./routes/assignmentRoutes"
-  )
+  require("./routes/assignmentRoutes")
 );
 
 // ======================================================
@@ -246,10 +200,7 @@ app.use(
 
 app.use(
   "/api/dashboard",
-
-  require(
-    "./routes/dashboardRoutes"
-  )
+  require("./routes/dashboardRoutes")
 );
 
 // ======================================================
@@ -258,10 +209,7 @@ app.use(
 
 app.use(
   "/api/reports",
-
-  require(
-    "./routes/reportRoutes"
-  )
+  require("./routes/reportRoutes")
 );
 
 // ======================================================
@@ -270,10 +218,7 @@ app.use(
 
 app.use(
   "/api/users",
-
-  require(
-    "./routes/userRoutes"
-  )
+  require("./routes/userRoutes")
 );
 
 // ======================================================
@@ -282,10 +227,7 @@ app.use(
 
 app.use(
   "/api/activity-logs",
-
-  require(
-    "./routes/activityLogRoutes"
-  )
+  require("./routes/activityLogRoutes")
 );
 
 // ======================================================
@@ -294,10 +236,7 @@ app.use(
 
 app.use(
   "/api/settings",
-
-  require(
-    "./routes/settingsRoutes"
-  )
+  require("./routes/settingsRoutes")
 );
 
 // ======================================================
@@ -306,10 +245,41 @@ app.use(
 
 app.use(
   "/api/subscription",
+  require("./routes/subscriptionRoutes")
+);
 
-  require(
-    "./routes/subscriptionRoutes"
-  )
+// ======================================================
+// FINANCES
+// ======================================================
+
+// Catégories financières
+app.use(
+  "/api/finance/categories",
+  require("./routes/financeCategoryRoutes")
+);
+
+// Comptes financiers
+app.use(
+  "/api/finance/accounts",
+  require("./routes/financeAccountRoutes")
+);
+
+// Transactions financières
+app.use(
+  "/api/finance/transactions",
+  require("./routes/financeTransactionRoutes")
+);
+
+// Budgets financiers
+app.use(
+  "/api/finance/budgets",
+  require("./routes/financeBudgetRoutes")
+);
+
+// Réconciliation financière
+app.use(
+  "/api/finance/reconciliation",
+  require("./routes/financeReconciliationRoutes")
 );
 
 // ======================================================
@@ -318,172 +288,133 @@ app.use(
 
 app.use(
   "/api/platform",
-
-  require(
-    "./routes/platformRoutes"
-  )
+  require("./routes/platformRoutes")
 );
 
 // ======================================================
 // ROUTE 404
 // ======================================================
 
-app.use(
-  (req, res) => {
-    return res
-      .status(404)
-      .json({
-        success: false,
-
-        message:
-          `Route API introuvable : ${req.method} ${req.originalUrl}`,
-      });
-  }
-);
+app.use((req, res) => {
+  return res.status(404).json({
+    success: false,
+    message: `Route API introuvable : ${req.method} ${req.originalUrl}`,
+  });
+});
 
 // ======================================================
 // GESTION GLOBALE DES ERREURS
 // ======================================================
 
-app.use(
-  (
-    err,
-    req,
-    res,
-    next
-  ) => {
-    console.error(
-      "❌ ERREUR SERVEUR :",
-      err
-    );
+app.use((err, req, res, next) => {
+  console.error(
+    "❌ ERREUR SERVEUR :",
+    err
+  );
 
-    return res
-      .status(
-        err.status ||
-          500
-      )
-      .json({
-        success: false,
+  return res.status(
+    err.status || 500
+  ).json({
+    success: false,
+    message:
+      err.message ||
+      "Erreur interne du serveur",
 
-        message:
-          err.message ||
-          "Erreur interne du serveur",
-
-        ...(process.env
-          .NODE_ENV ===
-        "development"
-          ? {
-              stack:
-                err.stack,
-            }
-          : {}),
-      });
-  }
-);
+    ...(process.env.NODE_ENV === "development"
+      ? {
+          stack: err.stack,
+        }
+      : {}),
+  });
+});
 
 // ======================================================
 // PORT
 // ======================================================
 
 const PORT =
-  process.env.PORT ||
-  8000;
+  process.env.PORT || 8000;
 
 // ======================================================
 // DÉMARRAGE DU SERVEUR
 // ======================================================
 
-const startServer =
-  async () => {
-    try {
-      await connectDB();
+const startServer = async () => {
+  try {
+    await connectDB();
 
-      console.log(
-        "✅ Connexion MongoDB établie"
-      );
+    console.log(
+      "✅ Connexion MongoDB établie"
+    );
 
-      const server =
-        app.listen(
-          PORT,
-
-          () => {
-            console.log(
-              `🚀 Serveur lancé sur le port ${PORT}`
-            );
-
-            console.log(
-              `🌐 API : http://localhost:${PORT}`
-            );
-
-            try {
-              startAssignmentReminderJob();
-
-              console.log(
-                "⏰ Scheduler des rappels lancé"
-              );
-            } catch (error) {
-              console.error(
-                "❌ Erreur lancement scheduler :",
-                error
-              );
-            }
-          }
+    const server = app.listen(
+      PORT,
+      () => {
+        console.log(
+          `🚀 Serveur lancé sur le port ${PORT}`
         );
 
-      const shutdown =
-        (signal) => {
+        console.log(
+          `🌐 API : http://localhost:${PORT}`
+        );
+
+        try {
+          startAssignmentReminderJob();
+
           console.log(
-            `\n🛑 Signal ${signal} reçu`
+            "⏰ Scheduler des rappels lancé"
           );
-
-          server.close(
-            () => {
-              console.log(
-                "✅ Serveur HTTP arrêté"
-              );
-
-              process.exit(0);
-            }
-          );
-        };
-
-      process.on(
-        "SIGINT",
-
-        () =>
-          shutdown(
-            "SIGINT"
-          )
-      );
-
-      process.on(
-        "SIGTERM",
-
-        () =>
-          shutdown(
-            "SIGTERM"
-          )
-      );
-
-      process.on(
-        "unhandledRejection",
-
-        (error) => {
+        } catch (error) {
           console.error(
-            "❌ Promesse non gérée :",
+            "❌ Erreur lancement scheduler :",
             error
           );
         }
-      );
-    } catch (error) {
-      console.error(
-        "❌ Impossible de démarrer le serveur :",
-        error
+      }
+    );
+
+    const shutdown = (signal) => {
+      console.log(
+        `\n🛑 Signal ${signal} reçu`
       );
 
-      process.exit(1);
-    }
-  };
+      server.close(() => {
+        console.log(
+          "✅ Serveur HTTP arrêté"
+        );
+
+        process.exit(0);
+      });
+    };
+
+    process.on(
+      "SIGINT",
+      () => shutdown("SIGINT")
+    );
+
+    process.on(
+      "SIGTERM",
+      () => shutdown("SIGTERM")
+    );
+
+    process.on(
+      "unhandledRejection",
+      (error) => {
+        console.error(
+          "❌ Promesse non gérée :",
+          error
+        );
+      }
+    );
+  } catch (error) {
+    console.error(
+      "❌ Impossible de démarrer le serveur :",
+      error
+    );
+
+    process.exit(1);
+  }
+};
 
 // ======================================================
 // LANCEMENT

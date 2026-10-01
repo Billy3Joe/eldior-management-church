@@ -5,6 +5,10 @@ const Event = require("../models/Event");
 const Attendance = require("../models/Attendance");
 const PastoralAlert = require("../models/PastoralAlert");
 
+const createPersonHistory = require(
+  "../utils/createPersonHistory"
+);
+
 // ======================================================
 // CONFIGURATION
 // ======================================================
@@ -26,6 +30,27 @@ const isValidObjectId = (value) =>
 
 const isPresentStatus = (status) =>
   PRESENT_STATUSES.includes(status);
+
+// ======================================================
+// PERSON HISTORY — HELPER NON BLOQUANT
+// ======================================================
+
+const safeCreatePersonHistory = async (
+  payload
+) => {
+  try {
+    return await createPersonHistory(
+      payload
+    );
+  } catch (error) {
+    console.error(
+      "Erreur PersonHistory non bloquante :",
+      error.message
+    );
+
+    return null;
+  }
+};
 
 // ======================================================
 // NIVEAU D'ALERTE
@@ -142,6 +167,292 @@ const getAttendanceTrackingStartDate = (
 };
 
 // ======================================================
+// NOM COMPLET
+// ======================================================
+
+const getMemberFullName = (member) => {
+  if (!member) {
+    return "Cette personne";
+  }
+
+  const fullName =
+    `${member.firstName || ""} ${member.lastName || ""}`.trim();
+
+  return fullName || "Cette personne";
+};
+
+// ======================================================
+// MÉTADONNÉES D'UNE ALERTE
+// ======================================================
+
+const buildAlertHistoryMetadata = (
+  alert,
+  extra = {}
+) => {
+  return {
+    alertId: alert?._id || null,
+
+    alertType:
+      alert?.type || "",
+
+    level:
+      alert?.level || "",
+
+    status:
+      alert?.status || "",
+
+    consecutiveMissedServices:
+      alert?.consecutiveMissedServices ||
+      0,
+
+    lastPresenceDate:
+      alert?.lastPresenceDate ||
+      null,
+
+    daysSinceLastPresence:
+      alert?.daysSinceLastPresence ??
+      null,
+
+    lastCheckedServiceDate:
+      alert?.lastCheckedServiceDate ||
+      null,
+
+    detectedAt:
+      alert?.detectedAt ||
+      null,
+
+    lastDetectedAt:
+      alert?.lastDetectedAt ||
+      null,
+
+    assignedTo:
+      alert?.assignedTo?._id ||
+      alert?.assignedTo ||
+      null,
+
+    contactedAt:
+      alert?.contactedAt ||
+      null,
+
+    resolvedAt:
+      alert?.resolvedAt ||
+      null,
+
+    resolvedBy:
+      alert?.resolvedBy?._id ||
+      alert?.resolvedBy ||
+      null,
+
+    ...extra,
+  };
+};
+
+// ======================================================
+// HISTORIQUE — ALERTE CRÉÉE
+// ======================================================
+
+const createPastoralAlertCreatedHistory =
+  async ({
+    req = null,
+    churchId,
+    member,
+    alert,
+  }) => {
+    const fullName =
+      getMemberFullName(member);
+
+    await safeCreatePersonHistory({
+      req,
+
+      churchId,
+
+      memberId:
+        member._id,
+
+      type:
+        "PASTORAL_ALERT_CREATED",
+
+      category:
+        "Suivi pastoral",
+
+      title:
+        "Alerte pastorale détectée",
+
+      description:
+        `${fullName} présente ${alert.consecutiveMissedServices} absences consécutives. Une alerte pastorale de niveau « ${alert.level} » a été détectée.`,
+
+      occurredAt:
+        alert.detectedAt ||
+        new Date(),
+
+      previousValue:
+        "",
+
+      newValue:
+        alert.level,
+
+      sourceType:
+        "PastoralAlert",
+
+      sourceId:
+        alert._id,
+
+      metadata:
+        buildAlertHistoryMetadata(
+          alert
+        ),
+
+      origin:
+        "automatic",
+
+      visibility:
+        "standard",
+    });
+  };
+
+// ======================================================
+// HISTORIQUE — ALERTE MODIFIÉE
+// ======================================================
+
+const createPastoralAlertUpdatedHistory =
+  async ({
+    req = null,
+    churchId,
+    member,
+    alert,
+    previousValue,
+    newValue,
+    description,
+    changes = {},
+    origin = "automatic",
+  }) => {
+    const fullName =
+      getMemberFullName(member);
+
+    await safeCreatePersonHistory({
+      req,
+
+      churchId,
+
+      memberId:
+        member._id,
+
+      type:
+        "PASTORAL_ALERT_UPDATED",
+
+      category:
+        "Suivi pastoral",
+
+      title:
+        "Suivi pastoral mis à jour",
+
+      description:
+        description ||
+        `Le suivi pastoral de ${fullName} a été mis à jour.`,
+
+      occurredAt:
+        new Date(),
+
+      previousValue:
+        previousValue || "",
+
+      newValue:
+        newValue || "",
+
+      sourceType:
+        "PastoralAlert",
+
+      sourceId:
+        alert._id,
+
+      metadata:
+        buildAlertHistoryMetadata(
+          alert,
+          {
+            changes,
+          }
+        ),
+
+      origin,
+
+      visibility:
+        "standard",
+    });
+  };
+
+// ======================================================
+// HISTORIQUE — ALERTE RÉSOLUE
+// ======================================================
+
+const createPastoralAlertResolvedHistory =
+  async ({
+    req = null,
+    churchId,
+    member,
+    alert,
+    previousStatus = "",
+    automatic = false,
+  }) => {
+    const fullName =
+      getMemberFullName(member);
+
+    await safeCreatePersonHistory({
+      req,
+
+      churchId,
+
+      memberId:
+        member._id,
+
+      type:
+        "PASTORAL_ALERT_RESOLVED",
+
+      category:
+        "Suivi pastoral",
+
+      title:
+        "Alerte pastorale résolue",
+
+      description:
+        automatic
+          ? `L'alerte pastorale de ${fullName} a été résolue automatiquement par Eldior après détection d'un retour ou de la disparition de l'anomalie.`
+          : `L'alerte pastorale de ${fullName} a été résolue.`,
+
+      occurredAt:
+        alert.resolvedAt ||
+        new Date(),
+
+      previousValue:
+        previousStatus,
+
+      newValue:
+        "Résolue",
+
+      sourceType:
+        "PastoralAlert",
+
+      sourceId:
+        alert._id,
+
+      metadata:
+        buildAlertHistoryMetadata(
+          alert,
+          {
+            automatic,
+          }
+        ),
+
+      origin:
+        automatic
+          ? "automatic"
+          : "manual",
+
+      visibility:
+        "standard",
+    });
+  };
+
+// ======================================================
 // POPULATE D'UNE ALERTE
 // ======================================================
 
@@ -195,12 +506,6 @@ const analyzeMemberAbsence = ({
       member
     );
 
-  /*
-   * On ne garde que les cultes qui ont eu lieu
-   * depuis l'entrée réelle de la personne
-   * dans le suivi.
-   */
-
   const eligibleServices =
     services.filter((service) => {
       const serviceDate =
@@ -224,13 +529,6 @@ const analyzeMemberAbsence = ({
   let lastPresenceDate = null;
 
   const recentHistory = [];
-
-  /*
-   * services est trié du plus récent
-   * au plus ancien.
-   *
-   * On remonte jusqu'à la dernière présence.
-   */
 
   for (const service of eligibleServices) {
     const key =
@@ -263,15 +561,6 @@ const analyzeMemberAbsence = ({
 
     consecutiveMissedServices += 1;
   }
-
-  /*
-   * Si aucune présence n'a été trouvée parmi
-   * les cultes analysés, on cherche tout de même
-   * à connaître la dernière présence historique.
-   *
-   * Cette recherche sera faite séparément
-   * pendant le scan.
-   */
 
   return {
     trackingStartDate,
@@ -364,15 +653,6 @@ const getHistoricalLastPresence =
         })
         .lean();
 
-    /*
-     * findOne ne garantit pas ici que l'événement
-     * associé est le plus récent.
-     *
-     * On récupère donc toutes les présences si
-     * nécessaire pour trouver correctement
-     * la dernière.
-     */
-
     if (!attendance) {
       return null;
     }
@@ -432,7 +712,9 @@ const getHistoricalLastPresence =
 exports.scanProlongedAbsences =
   async (req, res, next) => {
     try {
-      const now = new Date();
+      const now =
+        new Date();
+
       const churchId =
         req.churchId;
 
@@ -496,7 +778,8 @@ exports.scanProlongedAbsences =
         await Member.find({
           church: churchId,
 
-          status: "Actif",
+          status:
+            "Actif",
 
           membershipType:
             "Membre",
@@ -505,6 +788,16 @@ exports.scanProlongedAbsences =
             "_id firstName lastName membershipDate firstVisitDate integratedAt wasVisitor createdAt"
           )
           .lean();
+
+      const memberMap =
+        new Map(
+          members.map(
+            (member) => [
+              member._id.toString(),
+              member,
+            ]
+          )
+        );
 
       const serviceIds =
         services.map(
@@ -527,11 +820,13 @@ exports.scanProlongedAbsences =
           church: churchId,
 
           member: {
-            $in: memberIds,
+            $in:
+              memberIds,
           },
 
           event: {
-            $in: serviceIds,
+            $in:
+              serviceIds,
           },
         })
           .select(
@@ -579,14 +874,6 @@ exports.scanProlongedAbsences =
             attendanceMap,
           });
 
-        /*
-         * Protection essentielle :
-         *
-         * Il faut au moins deux cultes réellement
-         * survenus depuis l'entrée de la personne
-         * avant de pouvoir déclencher une alerte.
-         */
-
         if (
           analysis
             .eligibleServicesCount <
@@ -614,20 +901,16 @@ exports.scanProlongedAbsences =
             analysis
               .lastPresenceDate;
 
-          /*
-           * Si aucune présence n'a été trouvée
-           * dans la fenêtre des 12 cultes,
-           * on cherche dans l'historique.
-           */
-
           if (
             !lastPresenceDate
           ) {
             lastPresenceDate =
               await getHistoricalLastPresence({
                 churchId,
+
                 memberId:
                   member._id,
+
                 trackingStartDate:
                   analysis
                     .trackingStartDate,
@@ -649,7 +932,8 @@ exports.scanProlongedAbsences =
 
           const existingAlert =
             await PastoralAlert.findOne({
-              church: churchId,
+              church:
+                churchId,
 
               member:
                 member._id,
@@ -658,7 +942,25 @@ exports.scanProlongedAbsences =
                 "Absence prolongée",
             });
 
+          // ==================================================
+          // ALERTE EXISTANTE
+          // ==================================================
+
           if (existingAlert) {
+            const previousLevel =
+              existingAlert.level;
+
+            const previousStatus =
+              existingAlert.status;
+
+            const previousMissedCount =
+              existingAlert
+                .consecutiveMissedServices;
+
+            const wasResolved =
+              existingAlert.status ===
+              "Résolue";
+
             existingAlert.level =
               level;
 
@@ -678,16 +980,7 @@ exports.scanProlongedAbsences =
             existingAlert.lastDetectedAt =
               now;
 
-            /*
-             * Si la personne avait déjà eu
-             * une alerte résolue puis recommence
-             * à s'absenter, on réouvre l'alerte.
-             */
-
-            if (
-              existingAlert.status ===
-              "Résolue"
-            ) {
+            if (wasResolved) {
               existingAlert.status =
                 "Ouverte";
 
@@ -704,39 +997,142 @@ exports.scanProlongedAbsences =
             await existingAlert.save();
 
             updated += 1;
+
+            // ------------------------------------------------
+            // Ne créer un historique que lorsqu'un changement
+            // pastoral significatif a réellement eu lieu.
+            // ------------------------------------------------
+
+            const levelChanged =
+              previousLevel !==
+              existingAlert.level;
+
+            const statusChanged =
+              previousStatus !==
+              existingAlert.status;
+
+            const missedCountChanged =
+              previousMissedCount !==
+              existingAlert
+                .consecutiveMissedServices;
+
+            if (
+              levelChanged ||
+              statusChanged ||
+              missedCountChanged
+            ) {
+              const changes = {
+                previousLevel,
+                newLevel:
+                  existingAlert.level,
+
+                previousStatus,
+                newStatus:
+                  existingAlert.status,
+
+                previousConsecutiveMissedServices:
+                  previousMissedCount,
+
+                newConsecutiveMissedServices:
+                  existingAlert
+                    .consecutiveMissedServices,
+
+                reopened:
+                  wasResolved,
+              };
+
+              let description =
+                `Le suivi pastoral de ${getMemberFullName(member)} a été mis à jour.`;
+
+              if (wasResolved) {
+                description =
+                  `Une nouvelle période d'absence prolongée a été détectée pour ${getMemberFullName(member)}. L'alerte pastorale a été réouverte.`;
+              } else if (
+                levelChanged
+              ) {
+                description =
+                  `Le niveau de vigilance pastorale de ${getMemberFullName(member)} est passé de « ${previousLevel} » à « ${existingAlert.level} » après ${existingAlert.consecutiveMissedServices} absences consécutives.`;
+              }
+
+              await createPastoralAlertUpdatedHistory({
+                req: null,
+
+                churchId,
+
+                member,
+
+                alert:
+                  existingAlert,
+
+                previousValue:
+                  wasResolved
+                    ? previousStatus
+                    : previousLevel,
+
+                newValue:
+                  wasResolved
+                    ? existingAlert.status
+                    : existingAlert.level,
+
+                description,
+
+                changes,
+
+                origin:
+                  "automatic",
+              });
+            }
           } else {
-            await PastoralAlert.create({
-              church: churchId,
+            // ==================================================
+            // NOUVELLE ALERTE
+            // ==================================================
 
-              member:
-                member._id,
+            const newAlert =
+              await PastoralAlert.create({
+                church:
+                  churchId,
 
-              type:
-                "Absence prolongée",
+                member:
+                  member._id,
 
-              level,
+                type:
+                  "Absence prolongée",
 
-              consecutiveMissedServices:
-                missedCount,
+                level,
 
-              lastPresenceDate,
+                consecutiveMissedServices:
+                  missedCount,
 
-              daysSinceLastPresence,
+                lastPresenceDate,
 
-              lastCheckedServiceDate:
-                services[0]?.date ||
-                null,
+                daysSinceLastPresence,
 
-              status:
-                "Ouverte",
+                lastCheckedServiceDate:
+                  services[0]?.date ||
+                  null,
 
-              detectedAt: now,
+                status:
+                  "Ouverte",
 
-              lastDetectedAt:
-                now,
-            });
+                detectedAt:
+                  now,
+
+                lastDetectedAt:
+                  now,
+              });
 
             created += 1;
+
+            await createPastoralAlertCreatedHistory({
+              req: null,
+
+              churchId,
+
+              member,
+
+              alert:
+                newAlert,
+            });
           }
         }
       }
@@ -747,13 +1143,15 @@ exports.scanProlongedAbsences =
 
       const activeAlerts =
         await PastoralAlert.find({
-          church: churchId,
+          church:
+            churchId,
 
           type:
             "Absence prolongée",
 
           status: {
-            $ne: "Résolue",
+            $ne:
+              "Résolue",
           },
         });
 
@@ -769,6 +1167,9 @@ exports.scanProlongedAbsences =
           );
 
         if (!stillDetected) {
+          const previousStatus =
+            alert.status;
+
           alert.status =
             "Résolue";
 
@@ -780,11 +1181,6 @@ exports.scanProlongedAbsences =
 
           const automaticNote =
             "Retour ou absence d'anomalie détecté automatiquement par Eldior.";
-
-          /*
-           * On évite d'ajouter la même note
-           * plusieurs fois.
-           */
 
           if (
             !alert.note.includes(
@@ -801,6 +1197,55 @@ exports.scanProlongedAbsences =
 
           automaticallyResolved +=
             1;
+
+          // ------------------------------------------------
+          // Historique de résolution automatique
+          // ------------------------------------------------
+
+          let member =
+            memberMap.get(
+              alert.member.toString()
+            );
+
+          /*
+           * Une alerte active peut éventuellement
+           * concerner une personne qui n'est plus dans
+           * la requête "membres actifs".
+           *
+           * On la récupère donc si nécessaire.
+           */
+
+          if (!member) {
+            member =
+              await Member.findOne({
+                _id:
+                  alert.member,
+
+                church:
+                  churchId,
+              })
+                .select(
+                  "_id firstName lastName"
+                )
+                .lean();
+          }
+
+          if (member) {
+            await createPastoralAlertResolvedHistory({
+              req: null,
+
+              churchId,
+
+              member,
+
+              alert,
+
+              previousStatus,
+
+              automatic:
+                true,
+            });
+          }
         }
       }
 
@@ -810,13 +1255,15 @@ exports.scanProlongedAbsences =
 
       const currentActiveAlerts =
         await PastoralAlert.countDocuments({
-          church: churchId,
+          church:
+            churchId,
 
           type:
             "Absence prolongée",
 
           status: {
-            $ne: "Résolue",
+            $ne:
+              "Résolue",
           },
         });
 
@@ -943,7 +1390,8 @@ exports.getPastoralAlerts =
           query
         )
           .populate({
-            path: "member",
+            path:
+              "member",
 
             select:
               "firstName lastName phone email status membershipType ageGroup gender spiritualStage followUpStatus membershipDate firstVisitDate integratedAt wasVisitor",
@@ -997,56 +1445,79 @@ exports.getPastoralAlertStats =
       ] =
         await Promise.all([
           PastoralAlert.countDocuments({
-            church: churchId,
+            church:
+              churchId,
+
             status: {
-              $ne: "Résolue",
+              $ne:
+                "Résolue",
             },
           }),
 
           PastoralAlert.countDocuments({
-            church: churchId,
+            church:
+              churchId,
+
             status: {
-              $ne: "Résolue",
+              $ne:
+                "Résolue",
             },
+
             level:
               "Attention",
           }),
 
           PastoralAlert.countDocuments({
-            church: churchId,
+            church:
+              churchId,
+
             status: {
-              $ne: "Résolue",
+              $ne:
+                "Résolue",
             },
+
             level:
               "À suivre",
           }),
 
           PastoralAlert.countDocuments({
-            church: churchId,
+            church:
+              churchId,
+
             status: {
-              $ne: "Résolue",
+              $ne:
+                "Résolue",
             },
+
             level:
               "Critique",
           }),
 
           PastoralAlert.countDocuments({
-            church: churchId,
+            church:
+              churchId,
+
             status:
               "En cours",
           }),
 
           PastoralAlert.countDocuments({
-            church: churchId,
+            church:
+              churchId,
+
             status:
               "Résolue",
           }),
 
           PastoralAlert.countDocuments({
-            church: churchId,
+            church:
+              churchId,
+
             status: {
-              $ne: "Résolue",
+              $ne:
+                "Résolue",
             },
+
             assignedTo:
               null,
           }),
@@ -1085,8 +1556,9 @@ exports.getPastoralAlertStats =
 exports.getMemberPastoralAlerts =
   async (req, res, next) => {
     try {
-      const { memberId } =
-        req.params;
+      const {
+        memberId,
+      } = req.params;
 
       if (
         !isValidObjectId(
@@ -1097,6 +1569,7 @@ exports.getMemberPastoralAlerts =
           .status(400)
           .json({
             success: false,
+
             message:
               "Identifiant de personne invalide.",
           });
@@ -1104,7 +1577,9 @@ exports.getMemberPastoralAlerts =
 
       const member =
         await Member.findOne({
-          _id: memberId,
+          _id:
+            memberId,
+
           church:
             req.churchId,
         })
@@ -1118,6 +1593,7 @@ exports.getMemberPastoralAlerts =
           .status(404)
           .json({
             success: false,
+
             message:
               "Personne introuvable.",
           });
@@ -1165,8 +1641,9 @@ exports.getMemberPastoralAlerts =
 exports.getPastoralAlertById =
   async (req, res, next) => {
     try {
-      const { id } =
-        req.params;
+      const {
+        id,
+      } = req.params;
 
       if (
         !isValidObjectId(id)
@@ -1175,6 +1652,7 @@ exports.getPastoralAlertById =
           .status(400)
           .json({
             success: false,
+
             message:
               "Identifiant d'alerte invalide.",
           });
@@ -1182,7 +1660,9 @@ exports.getPastoralAlertById =
 
       const alert =
         await PastoralAlert.findOne({
-          _id: id,
+          _id:
+            id,
+
           church:
             req.churchId,
         });
@@ -1192,6 +1672,7 @@ exports.getPastoralAlertById =
           .status(404)
           .json({
             success: false,
+
             message:
               "Alerte pastorale introuvable.",
           });
@@ -1205,7 +1686,9 @@ exports.getPastoralAlertById =
         .status(200)
         .json({
           success: true,
-          data: alert,
+
+          data:
+            alert,
         });
     } catch (error) {
       next(error);
@@ -1219,8 +1702,9 @@ exports.getPastoralAlertById =
 exports.updatePastoralAlert =
   async (req, res, next) => {
     try {
-      const { id } =
-        req.params;
+      const {
+        id,
+      } = req.params;
 
       const {
         status,
@@ -1236,6 +1720,7 @@ exports.updatePastoralAlert =
           .status(400)
           .json({
             success: false,
+
             message:
               "Identifiant d'alerte invalide.",
           });
@@ -1243,7 +1728,9 @@ exports.updatePastoralAlert =
 
       const alert =
         await PastoralAlert.findOne({
-          _id: id,
+          _id:
+            id,
+
           church:
             req.churchId,
         });
@@ -1253,10 +1740,41 @@ exports.updatePastoralAlert =
           .status(404)
           .json({
             success: false,
+
             message:
               "Alerte pastorale introuvable.",
           });
       }
+
+      // ==================================================
+      // ÉTAT AVANT MODIFICATION
+      // ==================================================
+
+      const previousState = {
+        status:
+          alert.status,
+
+        assignedTo:
+          alert.assignedTo
+            ? alert.assignedTo.toString()
+            : null,
+
+        note:
+          alert.note || "",
+
+        contactedAt:
+          alert.contactedAt ||
+          null,
+
+        resolvedAt:
+          alert.resolvedAt ||
+          null,
+
+        resolvedBy:
+          alert.resolvedBy
+            ? alert.resolvedBy.toString()
+            : null,
+      };
 
       // ==================================================
       // STATUT
@@ -1280,6 +1798,7 @@ exports.updatePastoralAlert =
             .status(400)
             .json({
               success: false,
+
               message:
                 "Statut d'alerte invalide.",
             });
@@ -1292,12 +1811,22 @@ exports.updatePastoralAlert =
           status ===
           "Résolue"
         ) {
-          alert.resolvedAt =
-            new Date();
+          /*
+           * On ne réécrit pas inutilement resolvedAt
+           * à chaque PUT si l'alerte était déjà résolue.
+           */
 
-          alert.resolvedBy =
-            req.user?._id ||
-            null;
+          if (
+            previousState.status !==
+            "Résolue"
+          ) {
+            alert.resolvedAt =
+              new Date();
+
+            alert.resolvedBy =
+              req.user?._id ||
+              null;
+          }
         } else {
           alert.resolvedAt =
             null;
@@ -1331,6 +1860,7 @@ exports.updatePastoralAlert =
               .status(400)
               .json({
                 success: false,
+
                 message:
                   "Responsable invalide.",
               });
@@ -1374,7 +1904,188 @@ exports.updatePastoralAlert =
         }
       }
 
+      // ==================================================
+      // SAUVEGARDE
+      // ==================================================
+
       await alert.save();
+
+      // ==================================================
+      // HISTORIQUE PERSONNE
+      // ==================================================
+
+      const member =
+        await Member.findOne({
+          _id:
+            alert.member,
+
+          church:
+            req.churchId,
+        })
+          .select(
+            "_id firstName lastName"
+          )
+          .lean();
+
+      if (member) {
+        const currentAssignedTo =
+          alert.assignedTo
+            ? alert.assignedTo.toString()
+            : null;
+
+        const statusChanged =
+          previousState.status !==
+          alert.status;
+
+        const assignedToChanged =
+          previousState.assignedTo !==
+          currentAssignedTo;
+
+        const noteChanged =
+          previousState.note !==
+          (alert.note || "");
+
+        const contactChanged =
+          contacted === true;
+
+        const justResolved =
+          previousState.status !==
+            "Résolue" &&
+          alert.status ===
+            "Résolue";
+
+        // ------------------------------------------------
+        // RÉSOLUTION
+        // ------------------------------------------------
+
+        if (justResolved) {
+          await createPastoralAlertResolvedHistory({
+            req,
+
+            churchId:
+              req.churchId,
+
+            member,
+
+            alert,
+
+            previousStatus:
+              previousState.status,
+
+            automatic:
+              false,
+          });
+        } else {
+          // ------------------------------------------------
+          // MISE À JOUR SIGNIFICATIVE
+          // ------------------------------------------------
+
+          const meaningfulChange =
+            statusChanged ||
+            assignedToChanged ||
+            contactChanged;
+
+          /*
+           * Une simple correction de note n'ajoute pas
+           * automatiquement un événement dans la timeline.
+           *
+           * La note reste dans PastoralAlert.
+           * Cela évite de surcharger le Profil 360°.
+           */
+
+          if (meaningfulChange) {
+            const changes = {
+              previousStatus:
+                previousState.status,
+
+              newStatus:
+                alert.status,
+
+              previousAssignedTo:
+                previousState.assignedTo,
+
+              newAssignedTo:
+                currentAssignedTo,
+
+              contacted:
+                contactChanged,
+
+              contactedAt:
+                alert.contactedAt ||
+                null,
+
+              noteChanged,
+            };
+
+            let description =
+              `Le suivi pastoral de ${getMemberFullName(member)} a été mis à jour.`;
+
+            let previousValue =
+              previousState.status ||
+              "";
+
+            let newValue =
+              alert.status || "";
+
+            if (contactChanged) {
+              description =
+                `${getMemberFullName(member)} a été contacté dans le cadre de son suivi pastoral.`;
+
+              previousValue =
+                previousState.status ||
+                "";
+
+              newValue =
+                alert.status ||
+                "En cours";
+            } else if (
+              assignedToChanged
+            ) {
+              description =
+                `Le responsable du suivi pastoral de ${getMemberFullName(member)} a été modifié.`;
+
+              previousValue =
+                previousState.assignedTo ||
+                "Non assigné";
+
+              newValue =
+                currentAssignedTo ||
+                "Non assigné";
+            } else if (
+              statusChanged
+            ) {
+              description =
+                `Le statut du suivi pastoral de ${getMemberFullName(member)} est passé de « ${previousState.status} » à « ${alert.status} ».`;
+            }
+
+            await createPastoralAlertUpdatedHistory({
+              req,
+
+              churchId:
+                req.churchId,
+
+              member,
+
+              alert,
+
+              previousValue,
+
+              newValue,
+
+              description,
+
+              changes,
+
+              origin:
+                "manual",
+            });
+          }
+        }
+      }
+
+      // ==================================================
+      // POPULATE
+      // ==================================================
 
       await populateAlert(
         alert
@@ -1388,7 +2099,8 @@ exports.updatePastoralAlert =
           message:
             "Alerte pastorale mise à jour.",
 
-          data: alert,
+          data:
+            alert,
         });
     } catch (error) {
       next(error);
