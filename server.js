@@ -252,6 +252,12 @@ app.use(
 // FINANCES
 // ======================================================
 
+// Tableau de bord financier
+app.use(
+  "/api/finance/dashboard",
+  require("./routes/financeDashboardRoutes")
+);
+
 // Catégories financières
 app.use(
   "/api/finance/categories",
@@ -316,6 +322,7 @@ app.use((err, req, res, next) => {
     err.status || 500
   ).json({
     success: false,
+
     message:
       err.message ||
       "Erreur interne du serveur",

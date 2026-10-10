@@ -1,3 +1,5 @@
+// controllers/financeTransactionController.js
+
 const mongoose = require("mongoose");
 
 const FinanceTransaction = require("../models/FinanceTransaction");
@@ -9,11 +11,7 @@ const Member = require("../models/Member");
 // CONSTANTES
 // ======================================================
 
-const VALID_TYPES = [
-  "income",
-  "expense",
-  "transfer",
-];
+const VALID_TYPES = ["income", "expense", "transfer"];
 
 const VALID_STATUSES = [
   "draft",
@@ -68,7 +66,7 @@ const normalizeBoolean = (value) => {
 };
 
 const escapeRegex = (value = "") => {
-  return value.replace(
+  return String(value).replace(
     /[.*+?^${}()|[\]\\]/g,
     "\\$&"
   );
@@ -86,7 +84,9 @@ const roundMoney = (value) => {
 // POPULATE STANDARD
 // ======================================================
 
-const populateTransaction = async (transaction) => {
+const populateTransaction = async (
+  transaction
+) => {
   await transaction.populate([
     {
       path: "category",
@@ -139,7 +139,10 @@ const getValidAccount = async ({
   churchId,
   requireActive = true,
 }) => {
-  if (!accountId || !isValidObjectId(accountId)) {
+  if (
+    !accountId ||
+    !isValidObjectId(accountId)
+  ) {
     return {
       success: false,
       message: "Compte financier invalide.",
@@ -208,15 +211,13 @@ const getValidCategory = async ({
     };
   }
 
-  if (
-    category.type !== transactionType
-  ) {
+  if (category.type !== transactionType) {
     return {
       success: false,
       message:
         transactionType === "income"
           ? "Une entrée doit utiliser une catégorie de revenus."
-          : "Une dépense doit utiliser une catégorie de dépenses.",
+          : "Une sortie doit utiliser une catégorie de dépenses.",
     };
   }
 
@@ -248,11 +249,10 @@ const getValidMember = async ({
     };
   }
 
-  const member =
-    await Member.findOne({
-      _id: memberId,
-      church: churchId,
-    });
+  const member = await Member.findOne({
+    _id: memberId,
+    church: churchId,
+  });
 
   if (!member) {
     return {
@@ -269,7 +269,7 @@ const getValidMember = async ({
 };
 
 // ======================================================
-// VALIDATION COMPLÈTE DES DONNÉES MÉTIER
+// VALIDATION COMPLÈTE
 // ======================================================
 
 const validateTransactionData = async ({
@@ -335,7 +335,7 @@ const validateTransactionData = async ({
   }
 
   // ====================================================
-  // ENTRÉE OU DÉPENSE
+  // ENTRÉE / SORTIE
   // ====================================================
 
   if (
@@ -371,7 +371,9 @@ const validateTransactionData = async ({
       return {
         success: false,
         message:
-          `La transaction est en ${normalizedCurrency}, mais le compte « ${accountResult.account.name} » utilise ${accountResult.account.currency}.`,
+          `La transaction est en ${normalizedCurrency}, ` +
+          `mais le compte « ${accountResult.account.name} » ` +
+          `utilise ${accountResult.account.currency}.`,
       };
     }
 
@@ -392,18 +394,15 @@ const validateTransactionData = async ({
         return memberResult;
       }
 
-      validMember =
-        memberResult.member;
+      validMember = memberResult.member;
     }
 
     return {
       success: true,
       amount: numericAmount,
       currency: normalizedCurrency,
-      account:
-        accountResult.account,
-      category:
-        categoryResult.category,
+      account: accountResult.account,
+      category: categoryResult.category,
       member: validMember,
     };
   }
@@ -455,7 +454,7 @@ const validateTransactionData = async ({
 
   if (
     fromResult.account.currency !==
-      toResult.account.currency
+    toResult.account.currency
   ) {
     return {
       success: false,
@@ -471,7 +470,8 @@ const validateTransactionData = async ({
     return {
       success: false,
       message:
-        `La transaction est en ${normalizedCurrency}, mais les comptes utilisent ${fromResult.account.currency}.`,
+        `La transaction est en ${normalizedCurrency}, ` +
+        `mais les comptes utilisent ${fromResult.account.currency}.`,
     };
   }
 
@@ -479,15 +479,13 @@ const validateTransactionData = async ({
     success: true,
     amount: numericAmount,
     currency: normalizedCurrency,
-    fromAccount:
-      fromResult.account,
-    toAccount:
-      toResult.account,
+    fromAccount: fromResult.account,
+    toAccount: toResult.account,
   };
 };
 
 // ======================================================
-// ERREUR MÉTIER : SOLDE INSUFFISANT
+// ERREUR SOLDE INSUFFISANT
 // ======================================================
 
 const createInsufficientBalanceError = ({
@@ -497,11 +495,13 @@ const createInsufficientBalanceError = ({
   currency,
 }) => {
   const error = new Error(
-    `Solde insuffisant sur le compte « ${accountName} ». Solde disponible : ${roundMoney(
-      currentBalance
-    )} ${currency}. Montant demandé : ${roundMoney(
-      amount
-    )} ${currency}.`
+    `Solde insuffisant sur le compte « ${accountName} ». ` +
+      `Solde disponible : ${roundMoney(
+        currentBalance
+      )} ${currency}. ` +
+      `Montant demandé : ${roundMoney(
+        amount
+      )} ${currency}.`
   );
 
   error.code = "INSUFFICIENT_BALANCE";
@@ -511,43 +511,41 @@ const createInsufficientBalanceError = ({
 };
 
 // ======================================================
-// CONSTRUIRE LE FILTRE ATOMIQUE DE DÉBIT
+// FILTRE ATOMIQUE DE DÉBIT
 // ======================================================
 
 const buildDebitFilter = ({
   accountId,
   churchId,
   amount,
-}) => {
-  return {
-    _id: accountId,
-    church: churchId,
-    isActive: true,
+}) => ({
+  _id: accountId,
+  church: churchId,
+  isActive: true,
 
-    $or: [
-      {
-        allowNegativeBalance: true,
+  $or: [
+    {
+      allowNegativeBalance: true,
+    },
+    {
+      allowNegativeBalance: {
+        $exists: false,
       },
-      {
-        allowNegativeBalance: {
-          $exists: false,
-        },
-        currentBalance: {
-          $gte: amount,
-        },
+      currentBalance: {
+        $gte: amount,
       },
-      {
-        allowNegativeBalance: false,
-        currentBalance: {
-          $gte: amount,
-        },
+    },
+    {
+      allowNegativeBalance: false,
+      currentBalance: {
+        $gte: amount,
       },
-    ],
-  };
-};
+    },
+  ],
+});
 
 // ======================================================
-// DÉBIT ATOMIQUE D'UN COMPTE
+// DÉBIT ATOMIQUE
 // ======================================================
 
 const debitAccount = async ({
@@ -578,8 +576,6 @@ const debitAccount = async ({
     return result;
   }
 
-  // Le compte n'a pas été débité.
-  // On le relit pour savoir pourquoi.
   const account =
     await FinanceAccount.findOne({
       _id: accountId,
@@ -618,7 +614,7 @@ const debitAccount = async ({
 };
 
 // ======================================================
-// APPLIQUER UN MOUVEMENT AU SOLDE
+// APPLIQUER MOUVEMENT
 // ======================================================
 
 const applyBalanceMovement = async (
@@ -627,13 +623,9 @@ const applyBalanceMovement = async (
   const churchId = transaction.church;
   const amount = Number(transaction.amount);
 
-  // ====================================================
   // ENTRÉE
-  // ====================================================
 
-  if (
-    transaction.type === "income"
-  ) {
+  if (transaction.type === "income") {
     const result =
       await FinanceAccount.findOneAndUpdate(
         {
@@ -660,13 +652,9 @@ const applyBalanceMovement = async (
     return;
   }
 
-  // ====================================================
-  // DÉPENSE
-  // ====================================================
+  // SORTIE
 
-  if (
-    transaction.type === "expense"
-  ) {
+  if (transaction.type === "expense") {
     await debitAccount({
       accountId: transaction.account,
       churchId,
@@ -676,13 +664,9 @@ const applyBalanceMovement = async (
     return;
   }
 
-  // ====================================================
   // TRANSFERT
-  // ====================================================
 
-  if (
-    transaction.type === "transfer"
-  ) {
+  if (transaction.type === "transfer") {
     await debitAccount({
       accountId:
         transaction.fromAccount,
@@ -694,8 +678,7 @@ const applyBalanceMovement = async (
       const destinationResult =
         await FinanceAccount.findOneAndUpdate(
           {
-            _id:
-              transaction.toAccount,
+            _id: transaction.toAccount,
             church: churchId,
             isActive: true,
           },
@@ -715,11 +698,9 @@ const applyBalanceMovement = async (
         );
       }
     } catch (error) {
-      // Compensation du débit du compte source.
       await FinanceAccount.updateOne(
         {
-          _id:
-            transaction.fromAccount,
+          _id: transaction.fromAccount,
           church: churchId,
         },
         {
@@ -735,7 +716,7 @@ const applyBalanceMovement = async (
 };
 
 // ======================================================
-// ANNULER / INVERSER UN MOUVEMENT
+// INVERSER MOUVEMENT
 // ======================================================
 
 const reverseBalanceMovement = async (
@@ -744,26 +725,9 @@ const reverseBalanceMovement = async (
   const churchId = transaction.church;
   const amount = Number(transaction.amount);
 
-  // ====================================================
-  // ANNULATION D'UNE ENTRÉE
-  // ====================================================
-  //
-  // Une entrée confirmée avait crédité le compte.
-  // Son annulation doit donc débiter le compte.
-  //
-  // IMPORTANT :
-  // On ne bloque PAS cette inversion avec la politique
-  // allowNegativeBalance.
-  //
-  // Pourquoi ?
-  // Parce qu'une annulation comptable doit pouvoir
-  // restaurer l'état financier correspondant à
-  // l'annulation d'une opération précédemment confirmée.
-  // ====================================================
+  // ANNULATION ENTRÉE
 
-  if (
-    transaction.type === "income"
-  ) {
+  if (transaction.type === "income") {
     const result =
       await FinanceAccount.findOneAndUpdate(
         {
@@ -789,13 +753,9 @@ const reverseBalanceMovement = async (
     return;
   }
 
-  // ====================================================
-  // ANNULATION D'UNE DÉPENSE
-  // ====================================================
+  // ANNULATION SORTIE
 
-  if (
-    transaction.type === "expense"
-  ) {
+  if (transaction.type === "expense") {
     const result =
       await FinanceAccount.findOneAndUpdate(
         {
@@ -821,31 +781,13 @@ const reverseBalanceMovement = async (
     return;
   }
 
-  // ====================================================
-  // ANNULATION D'UN TRANSFERT
-  // ====================================================
-  //
-  // Le transfert initial :
-  // source      - montant
-  // destination + montant
-  //
-  // L'annulation :
-  // destination - montant
-  // source      + montant
-  //
-  // Là encore, on doit permettre l'inversion même si
-  // cela rend temporairement ou réellement le compte
-  // destination négatif.
-  // ====================================================
+  // ANNULATION TRANSFERT
 
-  if (
-    transaction.type === "transfer"
-  ) {
+  if (transaction.type === "transfer") {
     const destinationResult =
       await FinanceAccount.findOneAndUpdate(
         {
-          _id:
-            transaction.toAccount,
+          _id: transaction.toAccount,
           church: churchId,
         },
         {
@@ -868,8 +810,7 @@ const reverseBalanceMovement = async (
       const sourceResult =
         await FinanceAccount.findOneAndUpdate(
           {
-            _id:
-              transaction.fromAccount,
+            _id: transaction.fromAccount,
             church: churchId,
           },
           {
@@ -888,13 +829,9 @@ const reverseBalanceMovement = async (
         );
       }
     } catch (error) {
-      // Compensation :
-      // si la restauration de la source échoue,
-      // on recrédite la destination.
       await FinanceAccount.updateOne(
         {
-          _id:
-            transaction.toAccount,
+          _id: transaction.toAccount,
           church: churchId,
         },
         {
@@ -907,11 +844,8 @@ const reverseBalanceMovement = async (
       throw error;
     }
   }
-};
-
-// ======================================================
-// GET ALL TRANSACTIONS
-// GET /api/finance/transactions
+};// ======================================================
+// GET ALL
 // ======================================================
 
 const getFinanceTransactions = async (
@@ -919,14 +853,12 @@ const getFinanceTransactions = async (
   res
 ) => {
   try {
-    const churchId =
-      getChurchId(req);
+    const churchId = getChurchId(req);
 
     if (!churchId) {
       return res.status(400).json({
         success: false,
-        message:
-          "Église active introuvable.",
+        message: "Église active introuvable.",
       });
     }
 
@@ -976,9 +908,7 @@ const getFinanceTransactions = async (
 
     if (status) {
       if (
-        !VALID_STATUSES.includes(
-          status
-        )
+        !VALID_STATUSES.includes(status)
       ) {
         return res.status(400).json({
           success: false,
@@ -991,13 +921,10 @@ const getFinanceTransactions = async (
     }
 
     if (category) {
-      if (
-        !isValidObjectId(category)
-      ) {
+      if (!isValidObjectId(category)) {
         return res.status(400).json({
           success: false,
-          message:
-            "Catégorie invalide.",
+          message: "Catégorie invalide.",
         });
       }
 
@@ -1008,8 +935,7 @@ const getFinanceTransactions = async (
       if (!isValidObjectId(member)) {
         return res.status(400).json({
           success: false,
-          message:
-            "Membre invalide.",
+          message: "Membre invalide.",
         });
       }
 
@@ -1039,9 +965,7 @@ const getFinanceTransactions = async (
     }
 
     if (account) {
-      if (
-        !isValidObjectId(account)
-      ) {
+      if (!isValidObjectId(account)) {
         return res.status(400).json({
           success: false,
           message:
@@ -1050,15 +974,9 @@ const getFinanceTransactions = async (
       }
 
       filter.$or = [
-        {
-          account,
-        },
-        {
-          fromAccount: account,
-        },
-        {
-          toAccount: account,
-        },
+        { account },
+        { fromAccount: account },
+        { toAccount: account },
       ];
     }
 
@@ -1120,24 +1038,12 @@ const getFinanceTransactions = async (
       );
 
       const searchConditions = [
-        {
-          title: regex,
-        },
-        {
-          description: regex,
-        },
-        {
-          reference: regex,
-        },
-        {
-          receiptNumber: regex,
-        },
-        {
-          donorName: regex,
-        },
-        {
-          note: regex,
-        },
+        { title: regex },
+        { description: regex },
+        { reference: regex },
+        { receiptNumber: regex },
+        { donorName: regex },
+        { note: regex },
       ];
 
       if (filter.$or) {
@@ -1157,57 +1063,55 @@ const getFinanceTransactions = async (
       }
     }
 
-    const [
-      transactions,
-      total,
-    ] = await Promise.all([
-      FinanceTransaction.find(filter)
-        .populate(
-          "category",
-          "name type code color icon"
-        )
-        .populate(
-          "account",
-          "name type currency currentBalance allowNegativeBalance"
-        )
-        .populate(
-          "fromAccount",
-          "name type currency currentBalance allowNegativeBalance"
-        )
-        .populate(
-          "toAccount",
-          "name type currency currentBalance allowNegativeBalance"
-        )
-        .populate(
-          "member",
-          "firstName lastName name email phone"
-        )
-        .populate(
-          "createdBy",
-          "name email"
-        )
-        .populate(
-          "updatedBy",
-          "name email"
-        )
-        .populate(
-          "cancelledBy",
-          "name email"
-        )
-        .sort({
-          transactionDate: -1,
-          createdAt: -1,
-        })
-        .skip(
-          (numericPage - 1) *
-            numericLimit
-        )
-        .limit(numericLimit),
+    const [transactions, total] =
+      await Promise.all([
+        FinanceTransaction.find(filter)
+          .populate(
+            "category",
+            "name type code color icon"
+          )
+          .populate(
+            "account",
+            "name type currency currentBalance allowNegativeBalance"
+          )
+          .populate(
+            "fromAccount",
+            "name type currency currentBalance allowNegativeBalance"
+          )
+          .populate(
+            "toAccount",
+            "name type currency currentBalance allowNegativeBalance"
+          )
+          .populate(
+            "member",
+            "firstName lastName name email phone"
+          )
+          .populate(
+            "createdBy",
+            "name email"
+          )
+          .populate(
+            "updatedBy",
+            "name email"
+          )
+          .populate(
+            "cancelledBy",
+            "name email"
+          )
+          .sort({
+            transactionDate: -1,
+            createdAt: -1,
+          })
+          .skip(
+            (numericPage - 1) *
+              numericLimit
+          )
+          .limit(numericLimit),
 
-      FinanceTransaction.countDocuments(
-        filter
-      ),
-    ]);
+        FinanceTransaction.countDocuments(
+          filter
+        ),
+      ]);
 
     return res.status(200).json({
       success: true,
@@ -1239,8 +1143,7 @@ const getFinanceTransactions = async (
 };
 
 // ======================================================
-// GET ONE TRANSACTION
-// GET /api/finance/transactions/:id
+// GET ONE
 // ======================================================
 
 const getFinanceTransactionById =
@@ -1304,8 +1207,7 @@ const getFinanceTransactionById =
   };
 
 // ======================================================
-// CREATE TRANSACTION
-// POST /api/finance/transactions
+// CREATE
 // ======================================================
 
 const createFinanceTransaction =
@@ -1328,28 +1230,19 @@ const createFinanceTransaction =
         type,
         amount,
         currency = "EUR",
-
-        transactionDate =
-          new Date(),
-
+        transactionDate = new Date(),
         category = null,
         account = null,
-
         fromAccount = null,
         toAccount = null,
-
         member = null,
         donorName = "",
         isAnonymous = false,
-
         title,
         description = "",
         reference = "",
-
         paymentMethod = "cash",
-
         status = "confirmed",
-
         receiptNumber = "",
         attachmentUrl = "",
         note = "",
@@ -1411,8 +1304,7 @@ const createFinanceTransaction =
       if (!validation.success) {
         return res.status(400).json({
           success: false,
-          message:
-            validation.message,
+          message: validation.message,
         });
       }
 
@@ -1425,39 +1317,25 @@ const createFinanceTransaction =
 
       const transactionData = {
         church: churchId,
-
         type,
-        amount:
-          validation.amount,
+        amount: validation.amount,
         currency:
           validation.currency,
-
         transactionDate:
           parsedDate,
-
-        title:
-          String(title).trim(),
+        title: String(title).trim(),
         description,
         reference,
-
         paymentMethod,
-
         status,
-
         receiptNumber,
         attachmentUrl,
         note,
-
         createdBy:
           req.user?._id || null,
-
         updatedBy:
           req.user?._id || null,
       };
-
-      // ==================================================
-      // INCOME / EXPENSE
-      // ==================================================
 
       if (
         type === "income" ||
@@ -1470,18 +1348,12 @@ const createFinanceTransaction =
           validation.category._id;
       }
 
-      // ==================================================
-      // DONATEUR
-      // ==================================================
-
       if (type === "income") {
         transactionData.isAnonymous =
           anonymous;
 
         if (anonymous) {
-          transactionData.member =
-            null;
-
+          transactionData.member = null;
           transactionData.donorName =
             "";
         } else {
@@ -1496,14 +1368,9 @@ const createFinanceTransaction =
         transactionData.member = null;
         transactionData.donorName =
           "";
-
         transactionData.isAnonymous =
           false;
       }
-
-      // ==================================================
-      // TRANSFER
-      // ==================================================
 
       if (type === "transfer") {
         transactionData.fromAccount =
@@ -1515,14 +1382,11 @@ const createFinanceTransaction =
         transactionData.account = null;
         transactionData.category =
           null;
-
         transactionData.member = null;
         transactionData.donorName =
           "";
-
         transactionData.isAnonymous =
           false;
-
         transactionData.paymentMethod =
           "bank_transfer";
       }
@@ -1531,10 +1395,6 @@ const createFinanceTransaction =
         await FinanceTransaction.create(
           transactionData
         );
-
-      // ==================================================
-      // IMPACT SOLDE UNIQUEMENT SI CONFIRMÉE
-      // ==================================================
 
       if (status === "confirmed") {
         try {
@@ -1562,12 +1422,10 @@ const createFinanceTransaction =
 
       return res.status(201).json({
         success: true,
-
         message:
           status === "confirmed"
             ? "Transaction financière enregistrée et confirmée avec succès."
             : "Brouillon financier créé avec succès.",
-
         data: createdTransaction,
       });
     } catch (error) {
@@ -1600,7 +1458,6 @@ const createFinanceTransaction =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             Object.values(
               error.errors
@@ -1624,11 +1481,7 @@ const createFinanceTransaction =
   };
 
 // ======================================================
-// UPDATE DRAFT
-// PUT /api/finance/transactions/:id
-//
-// IMPORTANT :
-// une transaction confirmée est immuable.
+// UPDATE BROUILLON
 // ======================================================
 
 const updateFinanceTransaction =
@@ -1675,7 +1528,7 @@ const updateFinanceTransaction =
         return res.status(409).json({
           success: false,
           message:
-            "Une transaction confirmée ou annulée ne peut pas être modifiée. Annulez-la puis créez une nouvelle transaction si une correction est nécessaire.",
+            "Une transaction confirmée ou annulée ne peut pas être modifiée.",
         });
       }
 
@@ -1730,8 +1583,7 @@ const updateFinanceTransaction =
       if (!validation.success) {
         return res.status(400).json({
           success: false,
-          message:
-            validation.message,
+          message: validation.message,
         });
       }
 
@@ -1814,8 +1666,7 @@ const updateFinanceTransaction =
         "transfer"
       ) {
         transaction.account = null;
-        transaction.category =
-          null;
+        transaction.category = null;
 
         transaction.fromAccount =
           validation.fromAccount._id;
@@ -1824,9 +1675,7 @@ const updateFinanceTransaction =
           validation.toAccount._id;
 
         transaction.member = null;
-        transaction.donorName =
-          "";
-
+        transaction.donorName = "";
         transaction.isAnonymous =
           false;
 
@@ -1873,9 +1722,7 @@ const updateFinanceTransaction =
         "expense"
       ) {
         transaction.member = null;
-        transaction.donorName =
-          "";
-
+        transaction.donorName = "";
         transaction.isAnonymous =
           false;
       }
@@ -1888,7 +1735,9 @@ const updateFinanceTransaction =
         "note",
       ];
 
-      for (const field of optionalFields) {
+      for (
+        const field of optionalFields
+      ) {
         if (
           req.body[field] !==
           undefined
@@ -1952,29 +1801,31 @@ const updateFinanceTransaction =
           "Impossible de modifier le brouillon financier.",
       });
     }
-  };
-
-// ======================================================
-// CONFIRM DRAFT
-// PATCH /api/finance/transactions/:id/confirm
-// ======================================================
-
-const confirmFinanceTransaction =
-  async (req, res) => {
+  };// ======================================================
+  // CONFIRMER / RÉACTIVER
+  // PATCH /api/finance/transactions/:id/confirm
+  //
+  // draft     -> confirmed
+  // cancelled -> confirmed
+  //
+  // Le mouvement financier est appliqué exactement une fois.
+  // ======================================================
+  
+  const confirmFinanceTransaction = async (
+    req,
+    res
+  ) => {
     try {
-      const churchId =
-        getChurchId(req);
-
+      const churchId = getChurchId(req);
       const { id } = req.params;
-
+  
       if (!churchId) {
         return res.status(400).json({
           success: false,
-          message:
-            "Église active introuvable.",
+          message: "Église active introuvable.",
         });
       }
-
+  
       if (!isValidObjectId(id)) {
         return res.status(400).json({
           success: false,
@@ -1982,13 +1833,13 @@ const confirmFinanceTransaction =
             "Identifiant de transaction invalide.",
         });
       }
-
+  
       const transaction =
         await FinanceTransaction.findOne({
           _id: id,
           church: churchId,
         });
-
+  
       if (!transaction) {
         return res.status(404).json({
           success: false,
@@ -1996,10 +1847,9 @@ const confirmFinanceTransaction =
             "Transaction financière introuvable.",
         });
       }
-
+  
       if (
-        transaction.status ===
-        "confirmed"
+        transaction.status === "confirmed"
       ) {
         return res.status(409).json({
           success: false,
@@ -2007,91 +1857,71 @@ const confirmFinanceTransaction =
             "Cette transaction est déjà confirmée.",
         });
       }
-
+  
       if (
-        transaction.status ===
-        "cancelled"
+        !["draft", "cancelled"].includes(
+          transaction.status
+        )
       ) {
         return res.status(409).json({
           success: false,
           message:
-            "Une transaction annulée ne peut pas être confirmée.",
+            "Le statut actuel de cette transaction ne permet pas sa confirmation.",
         });
       }
-
-      // Revalidation avant impact financier
+  
+      const previousStatus =
+        transaction.status;
+  
+      // Revalidation avant application du mouvement
       const validation =
         await validateTransactionData({
           churchId,
-
-          type:
-            transaction.type,
-
-          amount:
-            transaction.amount,
-
-          currency:
-            transaction.currency,
-
-          category:
-            transaction.category,
-
-          account:
-            transaction.account,
-
+          type: transaction.type,
+          amount: transaction.amount,
+          currency: transaction.currency,
+          category: transaction.category,
+          account: transaction.account,
           fromAccount:
             transaction.fromAccount,
-
-          toAccount:
-            transaction.toAccount,
-
-          member:
-            transaction.member,
-
+          toAccount: transaction.toAccount,
+          member: transaction.member,
           isAnonymous:
             transaction.isAnonymous,
-
           paymentMethod:
             transaction.paymentMethod,
         });
-
+  
       if (!validation.success) {
         return res.status(400).json({
           success: false,
-          message:
-            validation.message,
+          message: validation.message,
         });
       }
-
-      // ==================================================
-      // VERROUILLAGE LOGIQUE
-      // ==================================================
-      //
-      // Seulement draft -> confirmed.
-      //
-      // Cela empêche une double confirmation séquentielle.
-      // ==================================================
-
+  
+      // Verrouillage atomique du statut
       const claimed =
         await FinanceTransaction.findOneAndUpdate(
           {
             _id: transaction._id,
             church: churchId,
-            status: "draft",
+            status: previousStatus,
           },
           {
             $set: {
               status: "confirmed",
+              cancelledAt: null,
+              cancelledBy: null,
+              cancellationReason: "",
               updatedBy:
-                req.user?._id ||
-                null,
+                req.user?._id || null,
             },
           },
           {
             new: true,
           }
         );
-
+  
       if (!claimed) {
         return res.status(409).json({
           success: false,
@@ -2099,16 +1929,35 @@ const confirmFinanceTransaction =
             "La transaction a déjà été traitée.",
         });
       }
-
+  
       try {
-        await applyBalanceMovement(
-          claimed
-        );
+        await applyBalanceMovement(claimed);
       } catch (balanceError) {
-        // ==================================================
-        // RETOUR AU BROUILLON SI LE MOUVEMENT ÉCHOUE
-        // ==================================================
-
+        const rollbackData = {
+          status: previousStatus,
+        };
+  
+        if (
+          previousStatus === "cancelled"
+        ) {
+          rollbackData.cancelledAt =
+            transaction.cancelledAt ||
+            new Date();
+  
+          rollbackData.cancelledBy =
+            transaction.cancelledBy ||
+            null;
+  
+          rollbackData.cancellationReason =
+            transaction.cancellationReason ||
+            "";
+        } else {
+          rollbackData.cancelledAt = null;
+          rollbackData.cancelledBy = null;
+          rollbackData.cancellationReason =
+            "";
+        }
+  
         await FinanceTransaction.updateOne(
           {
             _id: claimed._id,
@@ -2116,23 +1965,21 @@ const confirmFinanceTransaction =
             status: "confirmed",
           },
           {
-            $set: {
-              status: "draft",
-            },
+            $set: rollbackData,
           }
         );
-
+  
         throw balanceError;
       }
-
-      await populateTransaction(
-        claimed
-      );
-
+  
+      await populateTransaction(claimed);
+  
       return res.status(200).json({
         success: true,
         message:
-          "Transaction financière confirmée avec succès.",
+          previousStatus === "cancelled"
+            ? "Transaction réactivée avec succès. Le mouvement financier a été restauré."
+            : "Transaction financière confirmée avec succès.",
         data: claimed,
       });
     } catch (error) {
@@ -2140,7 +1987,7 @@ const confirmFinanceTransaction =
         "Erreur confirmFinanceTransaction :",
         error
       );
-
+  
       if (
         error?.code ===
         "INSUFFICIENT_BALANCE"
@@ -2150,41 +1997,40 @@ const confirmFinanceTransaction =
           message: error.message,
         });
       }
-
+  
       return res.status(500).json({
         success: false,
         message:
           error.message ||
-          "Impossible de confirmer la transaction financière.",
+          "Impossible de confirmer ou réactiver la transaction financière.",
       });
     }
   };
-
-// ======================================================
-// CANCEL TRANSACTION
-// PATCH /api/finance/transactions/:id/cancel
-// ======================================================
-
-const cancelFinanceTransaction =
-  async (req, res) => {
+  
+  // ======================================================
+  // ANNULER
+  // PATCH /api/finance/transactions/:id/cancel
+  // ======================================================
+  
+  const cancelFinanceTransaction = async (
+    req,
+    res
+  ) => {
     try {
-      const churchId =
-        getChurchId(req);
-
+      const churchId = getChurchId(req);
       const { id } = req.params;
-
+  
       const {
         cancellationReason = "",
       } = req.body;
-
+  
       if (!churchId) {
         return res.status(400).json({
           success: false,
-          message:
-            "Église active introuvable.",
+          message: "Église active introuvable.",
         });
       }
-
+  
       if (!isValidObjectId(id)) {
         return res.status(400).json({
           success: false,
@@ -2192,13 +2038,13 @@ const cancelFinanceTransaction =
             "Identifiant de transaction invalide.",
         });
       }
-
+  
       const transaction =
         await FinanceTransaction.findOne({
           _id: id,
           church: churchId,
         });
-
+  
       if (!transaction) {
         return res.status(404).json({
           success: false,
@@ -2206,10 +2052,9 @@ const cancelFinanceTransaction =
             "Transaction financière introuvable.",
         });
       }
-
+  
       if (
-        transaction.status ===
-        "cancelled"
+        transaction.status === "cancelled"
       ) {
         return res.status(409).json({
           success: false,
@@ -2217,36 +2062,37 @@ const cancelFinanceTransaction =
             "Cette transaction est déjà annulée.",
         });
       }
-
+  
       // ==================================================
-      // BROUILLON : aucun mouvement à inverser
+      // BROUILLON
+      // Aucun mouvement financier à inverser
       // ==================================================
-
+  
       if (
-        transaction.status ===
-        "draft"
+        transaction.status === "draft"
       ) {
-        transaction.status =
-          "cancelled";
-
+        transaction.status = "cancelled";
+  
         transaction.cancelledAt =
           new Date();
-
+  
         transaction.cancelledBy =
           req.user?._id || null;
-
+  
         transaction.cancellationReason =
-          cancellationReason;
-
+          String(
+            cancellationReason || ""
+          ).trim();
+  
         transaction.updatedBy =
           req.user?._id || null;
-
+  
         await transaction.save();
-
+  
         await populateTransaction(
           transaction
         );
-
+  
         return res.status(200).json({
           success: true,
           message:
@@ -2254,14 +2100,14 @@ const cancelFinanceTransaction =
           data: transaction,
         });
       }
-
+  
       // ==================================================
-      // CONFIRMÉE : VERROUILLER PUIS INVERSER LES SOLDES
+      // CONFIRMÉE
+      // Verrouillage puis inversion du mouvement
       // ==================================================
-
-      const cancelledAt =
-        new Date();
-
+  
+      const cancelledAt = new Date();
+  
       const claimed =
         await FinanceTransaction.findOneAndUpdate(
           {
@@ -2272,29 +2118,26 @@ const cancelFinanceTransaction =
           {
             $set: {
               status: "cancelled",
-
+  
               cancelledAt,
-
+  
               cancelledBy:
-                req.user?._id ||
-                null,
-
+                req.user?._id || null,
+  
               cancellationReason:
                 String(
-                  cancellationReason ||
-                    ""
+                  cancellationReason || ""
                 ).trim(),
-
+  
               updatedBy:
-                req.user?._id ||
-                null,
+                req.user?._id || null,
             },
           },
           {
             new: true,
           }
         );
-
+  
       if (!claimed) {
         return res.status(409).json({
           success: false,
@@ -2302,16 +2145,15 @@ const cancelFinanceTransaction =
             "La transaction a déjà été traitée.",
         });
       }
-
+  
       try {
         await reverseBalanceMovement(
           claimed
         );
       } catch (balanceError) {
-        // ==================================================
-        // RESTAURER LE STATUT SI L'INVERSION ÉCHOUE
-        // ==================================================
-
+        // Restaurer le statut si l'inversion
+        // du mouvement financier échoue.
+  
         await FinanceTransaction.updateOne(
           {
             _id: claimed._id,
@@ -2321,22 +2163,18 @@ const cancelFinanceTransaction =
           {
             $set: {
               status: "confirmed",
-
               cancelledAt: null,
               cancelledBy: null,
-              cancellationReason:
-                "",
+              cancellationReason: "",
             },
           }
         );
-
+  
         throw balanceError;
       }
-
-      await populateTransaction(
-        claimed
-      );
-
+  
+      await populateTransaction(claimed);
+  
       return res.status(200).json({
         success: true,
         message:
@@ -2348,7 +2186,7 @@ const cancelFinanceTransaction =
         "Erreur cancelFinanceTransaction :",
         error
       );
-
+  
       return res.status(500).json({
         success: false,
         message:
@@ -2357,31 +2195,35 @@ const cancelFinanceTransaction =
       });
     }
   };
-
-// ======================================================
-// DELETE DRAFT
-// DELETE /api/finance/transactions/:id
-//
-// Une transaction ayant touché la comptabilité
-// n'est jamais supprimée.
-// ======================================================
-
-const deleteFinanceTransaction =
-  async (req, res) => {
+  
+  // ======================================================
+  // SUPPRIMER TRANSACTION
+  // DELETE /api/finance/transactions/:id
+  //
+  // draft     -> suppression directe
+  // cancelled -> suppression directe
+  // confirmed -> inversion du mouvement puis suppression
+  //
+  // Important :
+  // une transaction annulée a déjà eu son mouvement inversé.
+  // Il ne faut donc PAS modifier le solde une seconde fois.
+  // ======================================================
+  
+  const deleteFinanceTransaction = async (
+    req,
+    res
+  ) => {
     try {
-      const churchId =
-        getChurchId(req);
-
+      const churchId = getChurchId(req);
       const { id } = req.params;
-
+  
       if (!churchId) {
         return res.status(400).json({
           success: false,
-          message:
-            "Église active introuvable.",
+          message: "Église active introuvable.",
         });
       }
-
+  
       if (!isValidObjectId(id)) {
         return res.status(400).json({
           success: false,
@@ -2389,13 +2231,13 @@ const deleteFinanceTransaction =
             "Identifiant de transaction invalide.",
         });
       }
-
+  
       const transaction =
         await FinanceTransaction.findOne({
           _id: id,
           church: churchId,
         });
-
+  
       if (!transaction) {
         return res.status(404).json({
           success: false,
@@ -2403,271 +2245,441 @@ const deleteFinanceTransaction =
             "Transaction financière introuvable.",
         });
       }
-
+  
+      const originalStatus =
+        transaction.status;
+  
+      // ==================================================
+      // BROUILLON / ANNULÉE
+      // Aucun mouvement financier à modifier.
+      // ==================================================
+  
       if (
-        transaction.status !== "draft"
+        originalStatus === "draft" ||
+        originalStatus === "cancelled"
       ) {
-        return res.status(409).json({
-          success: false,
+        const deleteResult =
+          await FinanceTransaction.deleteOne({
+            _id: transaction._id,
+            church: churchId,
+            status: originalStatus,
+          });
+  
+        if (
+          !deleteResult ||
+          deleteResult.deletedCount !== 1
+        ) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "La transaction a déjà été modifiée ou supprimée.",
+          });
+        }
+  
+        return res.status(200).json({
+          success: true,
           message:
-            "Seuls les brouillons peuvent être supprimés. Une transaction confirmée doit être annulée afin de conserver la traçabilité comptable.",
+            originalStatus === "draft"
+              ? "Brouillon financier supprimé avec succès."
+              : "Transaction annulée supprimée définitivement avec succès.",
         });
       }
-
-      await transaction.deleteOne();
-
-      return res.status(200).json({
-        success: true,
+  
+      // ==================================================
+      // CONFIRMÉE
+      //
+      // 1. On prend possession de la transaction en la
+      //    passant temporairement à cancelled.
+      // 2. On inverse son mouvement financier.
+      // 3. On la supprime.
+      // 4. Si la suppression échoue, on réapplique
+      //    le mouvement et on restaure confirmed.
+      // ==================================================
+  
+      if (originalStatus === "confirmed") {
+        const claimed =
+          await FinanceTransaction.findOneAndUpdate(
+            {
+              _id: transaction._id,
+              church: churchId,
+              status: "confirmed",
+            },
+            {
+              $set: {
+                status: "cancelled",
+  
+                cancelledAt: new Date(),
+  
+                cancelledBy:
+                  req.user?._id || null,
+  
+                cancellationReason:
+                  "Suppression définitive d'une transaction confirmée.",
+  
+                updatedBy:
+                  req.user?._id || null,
+              },
+            },
+            {
+              new: true,
+            }
+          );
+  
+        if (!claimed) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "La transaction a déjà été traitée.",
+          });
+        }
+  
+        // ----------------------------------------------
+        // INVERSER LE MOUVEMENT
+        // ----------------------------------------------
+  
+        try {
+          await reverseBalanceMovement(
+            claimed
+          );
+        } catch (balanceError) {
+          // Le mouvement n'a pas pu être inversé.
+          // On restaure le statut confirmed.
+  
+          await FinanceTransaction.updateOne(
+            {
+              _id: claimed._id,
+              church: churchId,
+              status: "cancelled",
+            },
+            {
+              $set: {
+                status: "confirmed",
+                cancelledAt: null,
+                cancelledBy: null,
+                cancellationReason: "",
+                updatedBy:
+                  req.user?._id || null,
+              },
+            }
+          );
+  
+          throw balanceError;
+        }
+  
+        // ----------------------------------------------
+        // SUPPRIMER LA TRANSACTION
+        // ----------------------------------------------
+  
+        try {
+          const deleteResult =
+            await FinanceTransaction.deleteOne({
+              _id: claimed._id,
+              church: churchId,
+              status: "cancelled",
+            });
+  
+          if (
+            !deleteResult ||
+            deleteResult.deletedCount !== 1
+          ) {
+            throw new Error(
+              "La suppression définitive de la transaction a échoué."
+            );
+          }
+        } catch (deleteError) {
+          // --------------------------------------------
+          // COMPENSATION
+          //
+          // Le mouvement avait déjà été inversé.
+          // Puisque la transaction n'a pas été supprimée,
+          // on doit remettre exactement le mouvement
+          // financier initial.
+          // --------------------------------------------
+  
+          try {
+            await applyBalanceMovement(
+              claimed
+            );
+  
+            await FinanceTransaction.updateOne(
+              {
+                _id: claimed._id,
+                church: churchId,
+                status: "cancelled",
+              },
+              {
+                $set: {
+                  status: "confirmed",
+                  cancelledAt: null,
+                  cancelledBy: null,
+                  cancellationReason: "",
+                  updatedBy:
+                    req.user?._id || null,
+                },
+              }
+            );
+          } catch (
+            compensationError
+          ) {
+            console.error(
+              "ERREUR CRITIQUE compensation suppression transaction :",
+              compensationError
+            );
+  
+            return res.status(500).json({
+              success: false,
+              message:
+                "Erreur critique pendant la suppression. Une vérification du rapprochement financier est nécessaire.",
+            });
+          }
+  
+          throw deleteError;
+        }
+  
+        return res.status(200).json({
+          success: true,
+          message:
+            "Transaction confirmée supprimée avec succès. Le mouvement financier a été retiré du solde.",
+        });
+      }
+  
+      return res.status(409).json({
+        success: false,
         message:
-          "Brouillon financier supprimé avec succès.",
+          "Le statut de cette transaction ne permet pas sa suppression.",
       });
     } catch (error) {
       console.error(
         "Erreur deleteFinanceTransaction :",
         error
       );
-
+  
       return res.status(500).json({
         success: false,
         message:
-          "Impossible de supprimer le brouillon financier.",
+          error.message ||
+          "Impossible de supprimer la transaction financière.",
       });
     }
   };
-
-// ======================================================
-// SUMMARY FINANCIER
-// GET /api/finance/transactions/stats/summary
-// ======================================================
-
-const getFinanceTransactionStats =
-  async (req, res) => {
-    try {
-      const churchId =
-        getChurchId(req);
-
-      if (!churchId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Église active introuvable.",
-        });
-      }
-
-      const {
-        startDate,
-        endDate,
-        currency,
-      } = req.query;
-
-      const match = {
-        church:
-          new mongoose.Types.ObjectId(
-            churchId
-          ),
-
-        status: "confirmed",
-      };
-
-      if (currency) {
-        match.currency =
-          normalizeCurrency(currency);
-      }
-
-      if (startDate || endDate) {
-        match.transactionDate = {};
-
-        if (startDate) {
-          const parsedStartDate =
-            new Date(startDate);
-
-          if (
-            Number.isNaN(
-              parsedStartDate.getTime()
-            )
-          ) {
-            return res.status(400).json({
-              success: false,
-              message:
-                "Date de début invalide.",
-            });
-          }
-
-          match.transactionDate.$gte =
-            parsedStartDate;
+  
+  // ======================================================
+  // STATISTIQUES
+  // ======================================================
+  
+  const getFinanceTransactionStats =
+    async (req, res) => {
+      try {
+        const churchId =
+          getChurchId(req);
+  
+        if (!churchId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Église active introuvable.",
+          });
         }
-
-        if (endDate) {
-          const parsedEndDate =
-            new Date(endDate);
-
-          if (
-            Number.isNaN(
-              parsedEndDate.getTime()
-            )
-          ) {
-            return res.status(400).json({
-              success: false,
-              message:
-                "Date de fin invalide.",
-            });
-          }
-
-          parsedEndDate.setHours(
-            23,
-            59,
-            59,
-            999
-          );
-
-          match.transactionDate.$lte =
-            parsedEndDate;
+  
+        const {
+          startDate,
+          endDate,
+          currency,
+        } = req.query;
+  
+        const match = {
+          church:
+            new mongoose.Types.ObjectId(
+              churchId
+            ),
+  
+          status: "confirmed",
+        };
+  
+        if (currency) {
+          match.currency =
+            normalizeCurrency(currency);
         }
-      }
-
-      const result =
-        await FinanceTransaction.aggregate([
-          {
-            $match: match,
-          },
-
-          {
-            $group: {
-              _id: {
-                currency:
-                  "$currency",
-                type: "$type",
-              },
-
-              totalAmount: {
-                $sum: "$amount",
-              },
-
-              count: {
-                $sum: 1,
+  
+        if (startDate || endDate) {
+          match.transactionDate = {};
+  
+          if (startDate) {
+            const parsedStartDate =
+              new Date(startDate);
+  
+            if (
+              Number.isNaN(
+                parsedStartDate.getTime()
+              )
+            ) {
+              return res.status(400).json({
+                success: false,
+                message:
+                  "Date de début invalide.",
+              });
+            }
+  
+            match.transactionDate.$gte =
+              parsedStartDate;
+          }
+  
+          if (endDate) {
+            const parsedEndDate =
+              new Date(endDate);
+  
+            if (
+              Number.isNaN(
+                parsedEndDate.getTime()
+              )
+            ) {
+              return res.status(400).json({
+                success: false,
+                message:
+                  "Date de fin invalide.",
+              });
+            }
+  
+            parsedEndDate.setHours(
+              23,
+              59,
+              59,
+              999
+            );
+  
+            match.transactionDate.$lte =
+              parsedEndDate;
+          }
+        }
+  
+        const result =
+          await FinanceTransaction.aggregate([
+            {
+              $match: match,
+            },
+            {
+              $group: {
+                _id: {
+                  currency: "$currency",
+                  type: "$type",
+                },
+  
+                totalAmount: {
+                  $sum: "$amount",
+                },
+  
+                count: {
+                  $sum: 1,
+                },
               },
             },
+          ]);
+  
+        const byCurrency = {};
+  
+        for (const item of result) {
+          const currencyCode =
+            item._id.currency;
+  
+          if (
+            !byCurrency[currencyCode]
+          ) {
+            byCurrency[currencyCode] = {
+              income: 0,
+              expense: 0,
+              transfer: 0,
+  
+              incomeCount: 0,
+              expenseCount: 0,
+              transferCount: 0,
+  
+              net: 0,
+            };
+          }
+  
+          if (
+            item._id.type === "income"
+          ) {
+            byCurrency[
+              currencyCode
+            ].income = item.totalAmount;
+  
+            byCurrency[
+              currencyCode
+            ].incomeCount = item.count;
+          }
+  
+          if (
+            item._id.type === "expense"
+          ) {
+            byCurrency[
+              currencyCode
+            ].expense = item.totalAmount;
+  
+            byCurrency[
+              currencyCode
+            ].expenseCount = item.count;
+          }
+  
+          if (
+            item._id.type === "transfer"
+          ) {
+            byCurrency[
+              currencyCode
+            ].transfer = item.totalAmount;
+  
+            byCurrency[
+              currencyCode
+            ].transferCount = item.count;
+          }
+        }
+  
+        for (
+          const currencyCode of
+          Object.keys(byCurrency)
+        ) {
+          byCurrency[
+            currencyCode
+          ].net =
+            byCurrency[
+              currencyCode
+            ].income -
+            byCurrency[
+              currencyCode
+            ].expense;
+        }
+  
+        return res.status(200).json({
+          success: true,
+          data: {
+            byCurrency,
           },
-        ]);
-
-      const byCurrency = {};
-
-      for (const item of result) {
-        const currencyCode =
-          item._id.currency;
-
-        if (
-          !byCurrency[
-            currencyCode
-          ]
-        ) {
-          byCurrency[
-            currencyCode
-          ] = {
-            income: 0,
-            expense: 0,
-            transfer: 0,
-
-            incomeCount: 0,
-            expenseCount: 0,
-            transferCount: 0,
-
-            net: 0,
-          };
-        }
-
-        if (
-          item._id.type ===
-          "income"
-        ) {
-          byCurrency[
-            currencyCode
-          ].income =
-            item.totalAmount;
-
-          byCurrency[
-            currencyCode
-          ].incomeCount =
-            item.count;
-        }
-
-        if (
-          item._id.type ===
-          "expense"
-        ) {
-          byCurrency[
-            currencyCode
-          ].expense =
-            item.totalAmount;
-
-          byCurrency[
-            currencyCode
-          ].expenseCount =
-            item.count;
-        }
-
-        if (
-          item._id.type ===
-          "transfer"
-        ) {
-          byCurrency[
-            currencyCode
-          ].transfer =
-            item.totalAmount;
-
-          byCurrency[
-            currencyCode
-          ].transferCount =
-            item.count;
-        }
+        });
+      } catch (error) {
+        console.error(
+          "Erreur getFinanceTransactionStats :",
+          error
+        );
+  
+        return res.status(500).json({
+          success: false,
+          message:
+            "Impossible de récupérer les statistiques financières.",
+        });
       }
-
-      for (
-        const currencyCode of
-        Object.keys(byCurrency)
-      ) {
-        byCurrency[
-          currencyCode
-        ].net =
-          byCurrency[
-            currencyCode
-          ].income -
-          byCurrency[
-            currencyCode
-          ].expense;
-      }
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          byCurrency,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "Erreur getFinanceTransactionStats :",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Impossible de récupérer les statistiques financières.",
-      });
-    }
+    };
+  
+  // ======================================================
+  // EXPORTS
+  // ======================================================
+  
+  module.exports = {
+    getFinanceTransactions,
+    getFinanceTransactionById,
+    createFinanceTransaction,
+    updateFinanceTransaction,
+    confirmFinanceTransaction,
+    cancelFinanceTransaction,
+    deleteFinanceTransaction,
+    getFinanceTransactionStats,
   };
-
-// ======================================================
-// EXPORTS
-// ======================================================
-
-module.exports = {
-  getFinanceTransactions,
-  getFinanceTransactionById,
-  createFinanceTransaction,
-  updateFinanceTransaction,
-  confirmFinanceTransaction,
-  cancelFinanceTransaction,
-  deleteFinanceTransaction,
-  getFinanceTransactionStats,
-};

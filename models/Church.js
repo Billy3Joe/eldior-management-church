@@ -57,6 +57,31 @@ const churchSchema = new mongoose.Schema(
     },
 
     // ==================================================
+    // PARAMÈTRES RÉGIONAUX
+    // ==================================================
+
+    /**
+     * Devise principale de l'église.
+     *
+     * Elle sert de devise par défaut pour :
+     * - les nouveaux comptes financiers ;
+     * - les transactions ;
+     * - les budgets ;
+     * - les tableaux de bord financiers.
+     *
+     * Une église peut néanmoins posséder plusieurs
+     * comptes utilisant des devises différentes.
+     */
+    defaultCurrency: {
+      type: String,
+      default: "EUR",
+      uppercase: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 3,
+    },
+
+    // ==================================================
     // ABONNEMENT / STATUT
     // ==================================================
 
@@ -100,11 +125,6 @@ const churchSchema = new mongoose.Schema(
     // ==================================================
     // COMPATIBILITÉ / ANCIENNE LIMITE
     // ==================================================
-    // Les vraies limites sont maintenant gérées dans
-    // config/planLimits.js.
-    // On conserve ce champ uniquement pour compatibilité
-    // avec d'éventuelles anciennes données.
-    // ==================================================
 
     maxMembers: {
       type: Number,
@@ -135,6 +155,18 @@ const churchSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// ======================================================
+// NORMALISATION
+// ======================================================
+
+churchSchema.pre("save", function () {
+  this.defaultCurrency = String(
+    this.defaultCurrency || "EUR"
+  )
+    .trim()
+    .toUpperCase();
+});
 
 // ======================================================
 // INDEX UTILES

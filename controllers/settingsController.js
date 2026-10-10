@@ -11,6 +11,36 @@ const createActivityLog = require(
 );
 
 // ======================================================
+// DEVISES AUTORISÉES
+// ======================================================
+
+const ALLOWED_CURRENCIES = [
+  "EUR",
+  "GBP",
+  "CHF",
+
+  "XAF",
+  "XOF",
+  "CDF",
+  "NGN",
+  "GHS",
+  "ZAR",
+  "KES",
+  "UGX",
+  "TZS",
+  "RWF",
+
+  "USD",
+  "CAD",
+  "BRL",
+  "MXN",
+  "HTG",
+
+  "AUD",
+  "NZD",
+];
+
+// ======================================================
 // HELPERS
 // ======================================================
 
@@ -122,9 +152,6 @@ const getSettings = async (
 
     // ==================================================
     // SÉCURITÉ ABONNEMENT
-    //
-    // Une église Free/Standard ne doit pas conserver
-    // des fonctions Premium activées par erreur.
     // ==================================================
 
     let needsSave = false;
@@ -165,13 +192,50 @@ const getSettings = async (
     // RÉPONSE
     // ==================================================
 
+    /*
+     * defaultCurrency appartient au modèle Church.
+     *
+     * On l'ajoute aux données retournées par /settings
+     * afin que le frontend puisse gérer tous les
+     * paramètres depuis le même endpoint.
+     */
+
+    const settingsData = {
+      ...settings.toObject(),
+
+      defaultCurrency:
+        church.defaultCurrency ||
+        "EUR",
+    };
+
     return res
       .status(200)
       .json({
         success: true,
 
         data:
-          settings,
+          settingsData,
+
+        church: {
+          _id:
+            church._id,
+
+          name:
+            church.name,
+
+          logo:
+            church.logo,
+
+          defaultCurrency:
+            church.defaultCurrency ||
+            "EUR",
+
+          plan:
+            church.plan,
+
+          status:
+            church.status,
+        },
 
         subscription: {
           plan:
@@ -239,6 +303,9 @@ const updateSettings = async (
       timezone,
 
       churchName,
+
+      defaultCurrency,
+
       emailNotificationsEnabled,
 
       primaryColor,
@@ -297,7 +364,6 @@ const updateSettings = async (
 
     // ==================================================
     // INFORMATIONS GÉNÉRALES
-    //
     // ACCESSIBLES À TOUS LES PLANS
     // ==================================================
 
@@ -328,6 +394,45 @@ const updateSettings = async (
         cleanChurchName;
     }
 
+    // ==================================================
+    // DEVISE PRINCIPALE
+    // ACCESSIBLE À TOUS LES PLANS
+    // ==================================================
+
+    if (
+      typeof defaultCurrency !==
+      "undefined"
+    ) {
+      const cleanCurrency =
+        String(
+          defaultCurrency
+        )
+          .trim()
+          .toUpperCase();
+
+      if (
+        !ALLOWED_CURRENCIES.includes(
+          cleanCurrency
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            message:
+              "Devise principale invalide",
+          });
+      }
+
+      church.defaultCurrency =
+        cleanCurrency;
+    }
+
+    // ==================================================
+    // LOGO
+    // ==================================================
+
     if (
       typeof logo !==
       "undefined"
@@ -345,7 +450,6 @@ const updateSettings = async (
 
     // ==================================================
     // PERSONNALISATION AVANCÉE
-    //
     // STANDARD + PREMIUM
     // ==================================================
 
@@ -387,7 +491,6 @@ const updateSettings = async (
 
     // ==================================================
     // NOTIFICATIONS EMAIL
-    //
     // STANDARD + PREMIUM
     // ==================================================
 
@@ -429,7 +532,6 @@ const updateSettings = async (
 
     // ==================================================
     // RAPPELS AUTOMATIQUES
-    //
     // PREMIUM UNIQUEMENT
     // ==================================================
 
@@ -639,6 +741,14 @@ const updateSettings = async (
     // RÉPONSE
     // ==================================================
 
+    const settingsData = {
+      ...settings.toObject(),
+
+      defaultCurrency:
+        church.defaultCurrency ||
+        "EUR",
+    };
+
     return res
       .status(200)
       .json({
@@ -648,7 +758,7 @@ const updateSettings = async (
           "Paramètres enregistrés avec succès",
 
         data:
-          settings,
+          settingsData,
 
         church: {
           _id:
@@ -659,6 +769,10 @@ const updateSettings = async (
 
           logo:
             church.logo,
+
+          defaultCurrency:
+            church.defaultCurrency ||
+            "EUR",
 
           plan:
             church.plan,

@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const router = express.Router();
@@ -19,8 +20,12 @@ const protect = authMiddleware.protect || authMiddleware;
 const requireChurch = require("../middleware/tenantMiddleware");
 const authorizeRoles = require("../middleware/roleMiddleware");
 
+const financeAuditMiddleware = require(
+  "../middleware/financeAuditMiddleware"
+);
+
 // ======================================================
-// MIDDLEWARES GLOBAUX
+// AUTHENTIFICATION ET ISOLATION DES ÉGLISES
 // ======================================================
 
 router.use(protect, requireChurch);
@@ -66,6 +71,7 @@ router.get(
 router.post(
   "/",
   authorizeRoles("admin", "manager"),
+  financeAuditMiddleware,
   createFinanceTransaction
 );
 
@@ -77,39 +83,43 @@ router.post(
 router.put(
   "/:id",
   authorizeRoles("admin", "manager"),
+  financeAuditMiddleware,
   updateFinanceTransaction
 );
 
 // ======================================================
-// CONFIRMATION D'UN BROUILLON
+// CONFIRMATION / RÉACTIVATION
 // PATCH /api/finance/transactions/:id/confirm
 // ======================================================
 
 router.patch(
   "/:id/confirm",
   authorizeRoles("admin", "manager"),
+  financeAuditMiddleware,
   confirmFinanceTransaction
 );
 
 // ======================================================
-// ANNULATION D'UNE TRANSACTION
+// ANNULATION
 // PATCH /api/finance/transactions/:id/cancel
 // ======================================================
 
 router.patch(
   "/:id/cancel",
   authorizeRoles("admin", "manager"),
+  financeAuditMiddleware,
   cancelFinanceTransaction
 );
 
 // ======================================================
-// SUPPRESSION D'UN BROUILLON
+// SUPPRESSION
 // DELETE /api/finance/transactions/:id
 // ======================================================
 
 router.delete(
   "/:id",
   authorizeRoles("admin"),
+  financeAuditMiddleware,
   deleteFinanceTransaction
 );
 
