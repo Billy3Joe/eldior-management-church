@@ -71,7 +71,6 @@ router.get(
 router.post(
   "/",
   authorizeRoles("admin", "manager"),
-  financeAuditMiddleware,
   createFinanceTransaction
 );
 

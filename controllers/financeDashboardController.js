@@ -1035,6 +1035,9 @@ const getFinanceDashboard = async (req, res) => {
               _id:
                 transaction._id,
 
+              status:
+                transaction.status,
+
               type:
                 transaction.type,
 

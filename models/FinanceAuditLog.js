@@ -39,22 +39,27 @@ const financeAuditLogSchema = new mongoose.Schema(
       index: true,
     },
 
+    // État avant l'opération :
+    // conservé sans modification.
     before: {
       type: mongoose.Schema.Types.Mixed,
       default: null,
       immutable: true,
     },
 
+    // État après l'opération :
+    // doit pouvoir être renseigné lorsque
+    // l'opération est terminée.
     after: {
       type: mongoose.Schema.Types.Mixed,
       default: null,
-      immutable: true,
     },
 
     outcome: {
       type: String,
       enum: ["pending", "success", "failed"],
-      default: "success",
+      default: "pending",
+      required: true,
     },
 
     errorMessage: {
@@ -67,6 +72,10 @@ const financeAuditLogSchema = new mongoose.Schema(
     versionKey: false,
   }
 );
+
+// ======================================================
+// INDEX POUR L'HISTORIQUE FINANCIER
+// ======================================================
 
 financeAuditLogSchema.index({
   church: 1,
@@ -84,6 +93,10 @@ financeAuditLogSchema.index({
   actor: 1,
   createdAt: -1,
 });
+
+// ======================================================
+// EXPORT
+// ======================================================
 
 module.exports = mongoose.model(
   "FinanceAuditLog",
