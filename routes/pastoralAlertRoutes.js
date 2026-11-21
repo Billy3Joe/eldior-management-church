@@ -1,39 +1,34 @@
-const express =
-  require("express");
 
-const router =
-  express.Router();
+const express = require("express");
+
+const router = express.Router();
 
 // ======================================================
-// AUTH
+// AUTHENTIFICATION
 // ======================================================
 
-const authMiddleware =
-  require(
-    "../middleware/authMiddleware"
-  );
+const authMiddleware = require(
+  "../middleware/authMiddleware"
+);
 
 const protect =
-  authMiddleware.protect ||
-  authMiddleware;
+  authMiddleware.protect || authMiddleware;
 
 // ======================================================
-// TENANT
+// MULTITENANT / ÉGLISE
 // ======================================================
 
-const requireChurch =
-  require(
-    "../middleware/tenantMiddleware"
-  );
+const requireChurch = require(
+  "../middleware/tenantMiddleware"
+);
 
 // ======================================================
-// RÔLES
+// CONTRÔLE DES RÔLES
 // ======================================================
 
-const authorizeRoles =
-  require(
-    "../middleware/roleMiddleware"
-  );
+const authorizeRoles = require(
+  "../middleware/roleMiddleware"
+);
 
 // ======================================================
 // ABONNEMENT
@@ -46,7 +41,7 @@ const {
 );
 
 // ======================================================
-// CONTROLLER
+// CONTRÔLEUR DES ALERTES PASTORALES
 // ======================================================
 
 const {
@@ -61,22 +56,65 @@ const {
 );
 
 // ======================================================
-// MIDDLEWARES
+// VÉRIFICATION DES HANDLERS
 // ======================================================
+
+// Permet d'identifier immédiatement une fonction
+// manquante dans le contrôleur au démarrage.
+
+const handlers = {
+  scanProlongedAbsences,
+  getPastoralAlerts,
+  getPastoralAlertStats,
+  getMemberPastoralAlerts,
+  getPastoralAlertById,
+  updatePastoralAlert,
+};
+
+for (const [name, handler] of Object.entries(handlers)) {
+  if (typeof handler !== "function") {
+    throw new TypeError(
+      `PastoralAlert : le handler "${name}" est introuvable.`
+    );
+  }
+}
+
+// ======================================================
+// MIDDLEWARES GLOBAUX
+// ======================================================
+
+// Toutes les routes nécessitent :
+// - un utilisateur authentifié
+// - une église identifiée
+// - un abonnement actif
+// - un rôle admin ou manager
 
 router.use(
   protect,
   requireChurch,
   requireActiveSubscription,
-  authorizeRoles(
-    "admin",
-    "manager"
-  )
+  authorizeRoles("admin", "manager")
 );
 
 // ======================================================
-// ANALYSE DES ABSENCES
+// POST /api/pastoral-alerts/scan
 // ======================================================
+
+// Lance une analyse mensuelle des absences.
+//
+// Exemple de body :
+// {
+//   "periodKey": "2026-11"
+// }
+//
+// Seuls les cultes dominicaux terminés et
+// clôturés sont pris en compte.
+//
+// Le contrôleur ignore :
+// - les membres non pointés
+// - les membres excusés
+// - les présences
+// - les retards
 
 router.post(
   "/scan",
@@ -84,9 +122,11 @@ router.post(
 );
 
 // ======================================================
-// STATISTIQUES
-// IMPORTANT : AVANT /:id
+// GET /api/pastoral-alerts/stats
 // ======================================================
+
+// Exemple :
+// GET /api/pastoral-alerts/stats?periodKey=2026-11
 
 router.get(
   "/stats",
@@ -94,8 +134,10 @@ router.get(
 );
 
 // ======================================================
-// ALERTES D'UNE PERSONNE
+// GET /api/pastoral-alerts/member/:memberId
 // ======================================================
+
+// Historique pastoral d'un membre.
 
 router.get(
   "/member/:memberId",
@@ -103,8 +145,15 @@ router.get(
 );
 
 // ======================================================
-// LISTE
+// GET /api/pastoral-alerts
 // ======================================================
+
+// Filtres disponibles :
+// - status
+// - level
+// - assignedTo
+// - search
+// - periodKey
 
 router.get(
   "/",
@@ -112,8 +161,10 @@ router.get(
 );
 
 // ======================================================
-// DÉTAIL
+// GET /api/pastoral-alerts/:id
 // ======================================================
+
+// Détail d'une alerte pastorale.
 
 router.get(
   "/:id",
@@ -121,8 +172,15 @@ router.get(
 );
 
 // ======================================================
-// MODIFICATION / TRAITEMENT
+// PUT /api/pastoral-alerts/:id
 // ======================================================
+
+// Permet :
+// - l'attribution à un responsable
+// - la modification du statut
+// - l'ajout de notes
+// - l'enregistrement d'un contact
+// - la résolution manuelle
 
 router.put(
   "/:id",
@@ -133,5 +191,4 @@ router.put(
 // EXPORT
 // ======================================================
 
-module.exports =
-  router;
+module.exports = router;

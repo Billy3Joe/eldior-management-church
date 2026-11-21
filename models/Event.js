@@ -1,11 +1,9 @@
+
 const mongoose = require("mongoose");
 
 const eventSchema = new mongoose.Schema(
   {
-    // ==================================================
     // ÉGLISE / TENANT
-    // ==================================================
-
     church: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Church",
@@ -13,10 +11,7 @@ const eventSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ==================================================
     // INFORMATIONS
-    // ==================================================
-
     title: {
       type: String,
       required: true,
@@ -53,24 +48,38 @@ const eventSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // ==================================================
     // CULTE DU DIMANCHE
-    // ==================================================
-
     isSundayService: {
       type: Boolean,
       default: false,
       index: true,
     },
 
-    // ==================================================
-    // STATUT
-    // ==================================================
+    // CLÔTURE DES POINTAGES
+    attendanceClosed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
 
-    // Compatibilité :
-    // anciens statuts français +
-    // frontend actuel en anglais.
+    attendanceClosedAt: {
+      type: Date,
+      default: null,
+    },
 
+    attendanceClosedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    attendanceRevision: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // STATUT DE L'ÉVÉNEMENT
     status: {
       type: String,
       enum: [
@@ -78,7 +87,6 @@ const eventSchema = new mongoose.Schema(
         "En cours",
         "Terminé",
         "Annulé",
-
         "planned",
         "ongoing",
         "completed",
@@ -92,10 +100,7 @@ const eventSchema = new mongoose.Schema(
   }
 );
 
-// ======================================================
 // INDEXES
-// ======================================================
-
 eventSchema.index({
   church: 1,
   date: 1,
@@ -107,6 +112,14 @@ eventSchema.index({
   date: -1,
 });
 
+eventSchema.index({
+  church: 1,
+  isSundayService: 1,
+  attendanceClosed: 1,
+  date: -1,
+});
+
+// EXPORT
 module.exports = mongoose.model(
   "Event",
   eventSchema

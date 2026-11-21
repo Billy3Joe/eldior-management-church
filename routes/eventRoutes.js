@@ -1,13 +1,9 @@
-const express = require("express");
 
+const express = require("express");
 const router = express.Router();
 
-const Event = require(
-  "../models/Event"
-);
-
 // ======================================================
-// AUTH
+// AUTHENTIFICATION
 // ======================================================
 
 const authMiddleware = require(
@@ -15,8 +11,7 @@ const authMiddleware = require(
 );
 
 const protect =
-  authMiddleware.protect ||
-  authMiddleware;
+  authMiddleware.protect || authMiddleware;
 
 // ======================================================
 // TENANT
@@ -35,16 +30,24 @@ const authorizeRoles = require(
 );
 
 // ======================================================
-// ABONNEMENT
+// ABONNEMENT ET LIMITES
 // ======================================================
+
+const subscriptionMiddleware = require(
+  "../middleware/subscriptionMiddleware"
+);
 
 const {
   requireActiveSubscription,
   requireFeature,
   enforceResourceLimit,
-} = require(
-  "../middleware/subscriptionMiddleware"
-);
+} = subscriptionMiddleware;
+
+// ======================================================
+// MODÈLE
+// ======================================================
+
+const Event = require("../models/Event");
 
 // ======================================================
 // CONTROLLER
@@ -56,8 +59,28 @@ const {
   getEventById,
   updateEvent,
   deleteEvent,
+  closeEventAttendance,
+  reopenEventAttendance,
 } = require(
   "../controllers/eventController"
+);
+
+// ======================================================
+// MIDDLEWARES COMMUNS
+// ======================================================
+
+router.use(
+  protect,
+  requireChurch,
+  requireActiveSubscription
+);
+
+// ======================================================
+// VÉRIFICATION DE LA FONCTIONNALITÉ
+// ======================================================
+
+router.use(
+  requireFeature("events")
 );
 
 // ======================================================
@@ -66,43 +89,42 @@ const {
 
 router.get(
   "/",
-  protect,
-  requireChurch,
-  requireActiveSubscription,
-  requireFeature("events"),
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
+  authorizeRoles("admin", "manager"),
   getEvents
 );
 
 // ======================================================
 // CRÉATION D'UN ÉVÉNEMENT
-//
-// FREE      = 10 événements maximum
-// STANDARD  = 100 événements maximum
-// PREMIUM   = illimité
 // ======================================================
 
 router.post(
   "/",
-  protect,
-  requireChurch,
-  requireActiveSubscription,
-  requireFeature("events"),
-
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
-
+  authorizeRoles("admin", "manager"),
   enforceResourceLimit({
     resource: "events",
     Model: Event,
   }),
-
   createEvent
+);
+
+// ======================================================
+// CLÔTURE DES POINTAGES
+// ======================================================
+
+router.post(
+  "/:id/attendance/close",
+  authorizeRoles("admin", "manager"),
+  closeEventAttendance
+);
+
+// ======================================================
+// RÉOUVERTURE DES POINTAGES
+// ======================================================
+
+router.post(
+  "/:id/attendance/reopen",
+  authorizeRoles("admin"),
+  reopenEventAttendance
 );
 
 // ======================================================
@@ -111,16 +133,7 @@ router.post(
 
 router.get(
   "/:id",
-  protect,
-  requireChurch,
-  requireActiveSubscription,
-  requireFeature("events"),
-
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
-
+  authorizeRoles("admin", "manager"),
   getEventById
 );
 
@@ -130,33 +143,17 @@ router.get(
 
 router.put(
   "/:id",
-  protect,
-  requireChurch,
-  requireActiveSubscription,
-  requireFeature("events"),
-
-  authorizeRoles(
-    "admin",
-    "manager"
-  ),
-
+  authorizeRoles("admin", "manager"),
   updateEvent
 );
 
 // ======================================================
 // SUPPRESSION D'UN ÉVÉNEMENT
-// ADMIN UNIQUEMENT
 // ======================================================
 
 router.delete(
   "/:id",
-  protect,
-  requireChurch,
-  requireActiveSubscription,
-  requireFeature("events"),
-
   authorizeRoles("admin"),
-
   deleteEvent
 );
 

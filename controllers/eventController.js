@@ -1,13 +1,10 @@
+
 const mongoose = require("mongoose");
-
 const Event = require("../models/Event");
-
-const createActivityLog = require(
-  "../utils/createActivityLog"
-);
+const createActivityLog = require("../utils/createActivityLog");
 
 // ======================================================
-// CRÉER
+// CRÉER UN ÉVÉNEMENT
 // ======================================================
 
 const createEvent = async (req, res) => {
@@ -26,24 +23,21 @@ const createEvent = async (req, res) => {
     if (!req.churchId) {
       return res.status(403).json({
         success: false,
-        message:
-          "Aucune église associée à cet utilisateur",
+        message: "Aucune église associée à cet utilisateur",
       });
     }
 
     if (!title?.trim()) {
       return res.status(400).json({
         success: false,
-        message:
-          "Le titre de l'événement est obligatoire",
+        message: "Le titre de l'événement est obligatoire",
       });
     }
 
     if (!date) {
       return res.status(400).json({
         success: false,
-        message:
-          "La date de l'événement est obligatoire",
+        message: "La date de l'événement est obligatoire",
       });
     }
 
@@ -52,41 +46,31 @@ const createEvent = async (req, res) => {
     if (Number.isNaN(eventDate.getTime())) {
       return res.status(400).json({
         success: false,
-        message:
-          "La date de l'événement est invalide",
+        message: "La date de l'événement est invalide",
       });
     }
 
     const event = await Event.create({
       church: req.churchId,
-
       title: title.trim(),
-
       type:
         typeof type === "string" && type.trim()
           ? type.trim()
           : "Autre",
-
       description:
         typeof description === "string"
           ? description.trim()
           : "",
-
       date: eventDate,
-
       location:
         typeof location === "string"
           ? location.trim()
           : "",
-
       leader:
         typeof leader === "string"
           ? leader.trim()
           : "",
-
-      status:
-        status || "À venir",
-
+      status: status || "À venir",
       isSundayService:
         isSundayService === true ||
         isSundayService === "true",
@@ -97,21 +81,16 @@ const createEvent = async (req, res) => {
       action: "CREATE",
       entity: "Event",
       entityId: event._id,
-      description:
-        `Création de l'événement ${event.title}`,
+      description: `Création de l'événement ${event.title}`,
     });
 
     return res.status(201).json({
       success: true,
-      message:
-        "Événement créé avec succès",
+      message: "Événement créé avec succès",
       data: event,
     });
   } catch (error) {
-    console.error(
-      "Erreur createEvent :",
-      error
-    );
+    console.error("Erreur createEvent :", error);
 
     return res.status(500).json({
       success: false,
@@ -121,7 +100,7 @@ const createEvent = async (req, res) => {
 };
 
 // ======================================================
-// LISTE
+// LISTE DES ÉVÉNEMENTS
 // ======================================================
 
 const getEvents = async (req, res) => {
@@ -129,28 +108,21 @@ const getEvents = async (req, res) => {
     if (!req.churchId) {
       return res.status(403).json({
         success: false,
-        message:
-          "Aucune église associée à cet utilisateur",
+        message: "Aucune église associée à cet utilisateur",
       });
     }
 
-    const page =
-      Math.max(
-        parseInt(req.query.page, 10) || 1,
-        1
-      );
+    const page = Math.max(
+      parseInt(req.query.page, 10) || 1,
+      1
+    );
 
-    const limit =
-      Math.min(
-        Math.max(
-          parseInt(req.query.limit, 10) || 10,
-          1
-        ),
-        1000
-      );
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 10, 1),
+      1000
+    );
 
-    const skip =
-      (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const {
       search,
@@ -173,29 +145,17 @@ const getEvents = async (req, res) => {
       filter.status = status;
     }
 
-    // ==================================================
-    // FILTRE CULTE DU DIMANCHE
-    // ==================================================
-
-    if (
-      typeof isSundayService !==
-      "undefined"
-    ) {
+    if (typeof isSundayService !== "undefined") {
       filter.isSundayService =
         isSundayService === true ||
         isSundayService === "true";
     }
 
-    // ==================================================
-    // RECHERCHE
-    // ==================================================
-
     if (
       typeof search === "string" &&
       search.trim()
     ) {
-      const searchValue =
-        search.trim();
+      const searchValue = search.trim();
 
       filter.$or = [
         {
@@ -225,91 +185,55 @@ const getEvents = async (req, res) => {
       ];
     }
 
-    // ==================================================
-    // FILTRE PAR DATE
-    // ==================================================
-
     if (startDate || endDate) {
       filter.date = {};
 
       if (startDate) {
-        const start =
-          new Date(startDate);
+        const start = new Date(startDate);
 
-        if (
-          Number.isNaN(
-            start.getTime()
-          )
-        ) {
+        if (Number.isNaN(start.getTime())) {
           return res.status(400).json({
             success: false,
-            message:
-              "Date de début invalide",
+            message: "Date de début invalide",
           });
         }
 
-        filter.date.$gte =
-          start;
+        filter.date.$gte = start;
       }
 
       if (endDate) {
-        const end =
-          new Date(endDate);
+        const end = new Date(endDate);
 
-        if (
-          Number.isNaN(
-            end.getTime()
-          )
-        ) {
+        if (Number.isNaN(end.getTime())) {
           return res.status(400).json({
             success: false,
-            message:
-              "Date de fin invalide",
+            message: "Date de fin invalide",
           });
         }
 
-        end.setHours(
-          23,
-          59,
-          59,
-          999
-        );
-
-        filter.date.$lte =
-          end;
+        end.setHours(23, 59, 59, 999);
+        filter.date.$lte = end;
       }
     }
 
-    const total =
-      await Event.countDocuments(
-        filter
-      );
+    const total = await Event.countDocuments(filter);
 
-    const events =
-      await Event.find(filter)
-        .sort({
-          date: 1,
-        })
-        .skip(skip)
-        .limit(limit);
+    const events = await Event.find(filter)
+      .sort({ date: 1 })
+      .skip(skip)
+      .limit(limit);
 
     return res.status(200).json({
       success: true,
       page,
       limit,
       total,
-      totalPages:
-        Math.ceil(total / limit),
-      count:
-        events.length,
-      data:
-        events,
+      totalPages: Math.ceil(total / limit),
+      count: events.length,
+      data: events,
     });
   } catch (error) {
-    console.error(
-      "Erreur getEvents :",
-      error
-    );
+    console.error("Erreur getEvents :", error);
 
     return res.status(500).json({
       success: false,
@@ -319,39 +243,29 @@ const getEvents = async (req, res) => {
 };
 
 // ======================================================
-// DÉTAIL
+// DÉTAIL D'UN ÉVÉNEMENT
 // ======================================================
 
-const getEventById = async (
-  req,
-  res
-) => {
+const getEventById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        id
-      )
-    ) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message:
-          "ID événement invalide",
+        message: "ID événement invalide",
       });
     }
 
-    const event =
-      await Event.findOne({
-        _id: id,
-        church: req.churchId,
-      });
+    const event = await Event.findOne({
+      _id: id,
+      church: req.churchId,
+    });
 
     if (!event) {
       return res.status(404).json({
         success: false,
-        message:
-          "Événement introuvable",
+        message: "Événement introuvable",
       });
     }
 
@@ -360,10 +274,7 @@ const getEventById = async (
       data: event,
     });
   } catch (error) {
-    console.error(
-      "Erreur getEventById :",
-      error
-    );
+    console.error("Erreur getEventById :", error);
 
     return res.status(500).json({
       success: false,
@@ -373,39 +284,37 @@ const getEventById = async (
 };
 
 // ======================================================
-// MODIFIER
+// MODIFIER UN ÉVÉNEMENT
 // ======================================================
 
-const updateEvent = async (
-  req,
-  res
-) => {
+const updateEvent = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        id
-      )
-    ) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message:
-          "ID événement invalide",
+        message: "ID événement invalide",
       });
     }
 
-    const event =
-      await Event.findOne({
-        _id: id,
-        church: req.churchId,
-      });
+    const event = await Event.findOne({
+      _id: id,
+      church: req.churchId,
+    });
 
     if (!event) {
       return res.status(404).json({
         success: false,
+        message: "Événement introuvable",
+      });
+    }
+
+    if (event.attendanceClosed) {
+      return res.status(409).json({
+        success: false,
         message:
-          "Événement introuvable",
+          "Pointages clôturés : rouvre-les avant de modifier cet événement.",
       });
     }
 
@@ -420,74 +329,38 @@ const updateEvent = async (
       isSundayService,
     } = req.body;
 
-    // ==================================================
-    // TITRE
-    // ==================================================
-
-    if (
-      typeof title !==
-      "undefined"
-    ) {
+    if (typeof title !== "undefined") {
       if (
-        typeof title !==
-          "string" ||
+        typeof title !== "string" ||
         !title.trim()
       ) {
         return res.status(400).json({
           success: false,
-          message:
-            "Le titre ne peut pas être vide",
+          message: "Le titre ne peut pas être vide",
         });
       }
 
-      event.title =
-        title.trim();
+      event.title = title.trim();
     }
 
-    // ==================================================
-    // TYPE
-    // ==================================================
-
-    if (
-      typeof type !==
-      "undefined"
-    ) {
+    if (typeof type !== "undefined") {
       event.type =
         typeof type === "string"
           ? type.trim()
           : "Autre";
     }
 
-    // ==================================================
-    // DESCRIPTION
-    // ==================================================
-
-    if (
-      typeof description !==
-      "undefined"
-    ) {
+    if (typeof description !== "undefined") {
       event.description =
         typeof description === "string"
           ? description.trim()
           : "";
     }
 
-    // ==================================================
-    // DATE
-    // ==================================================
+    if (typeof date !== "undefined") {
+      const eventDate = new Date(date);
 
-    if (
-      typeof date !==
-      "undefined"
-    ) {
-      const eventDate =
-        new Date(date);
-
-      if (
-        Number.isNaN(
-          eventDate.getTime()
-        )
-      ) {
+      if (Number.isNaN(eventDate.getTime())) {
         return res.status(400).json({
           success: false,
           message:
@@ -495,58 +368,28 @@ const updateEvent = async (
         });
       }
 
-      event.date =
-        eventDate;
+      event.date = eventDate;
     }
 
-    // ==================================================
-    // LIEU
-    // ==================================================
-
-    if (
-      typeof location !==
-      "undefined"
-    ) {
+    if (typeof location !== "undefined") {
       event.location =
         typeof location === "string"
           ? location.trim()
           : "";
     }
 
-    // ==================================================
-    // RESPONSABLE
-    // ==================================================
-
-    if (
-      typeof leader !==
-      "undefined"
-    ) {
+    if (typeof leader !== "undefined") {
       event.leader =
         typeof leader === "string"
           ? leader.trim()
           : "";
     }
 
-    // ==================================================
-    // STATUT
-    // ==================================================
-
-    if (
-      typeof status !==
-      "undefined"
-    ) {
-      event.status =
-        status;
+    if (typeof status !== "undefined") {
+      event.status = status;
     }
 
-    // ==================================================
-    // CULTE DU DIMANCHE
-    // ==================================================
-
-    if (
-      typeof isSundayService !==
-      "undefined"
-    ) {
+    if (typeof isSundayService !== "undefined") {
       event.isSundayService =
         isSundayService === true ||
         isSundayService === "true";
@@ -565,15 +408,11 @@ const updateEvent = async (
 
     return res.status(200).json({
       success: true,
-      message:
-        "Événement mis à jour avec succès",
+      message: "Événement mis à jour avec succès",
       data: event,
     });
   } catch (error) {
-    console.error(
-      "Erreur updateEvent :",
-      error
-    );
+    console.error("Erreur updateEvent :", error);
 
     return res.status(500).json({
       success: false,
@@ -583,44 +422,41 @@ const updateEvent = async (
 };
 
 // ======================================================
-// SUPPRIMER
+// SUPPRIMER UN ÉVÉNEMENT
 // ======================================================
 
-const deleteEvent = async (
-  req,
-  res
-) => {
+const deleteEvent = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        id
-      )
-    ) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message:
-          "ID événement invalide",
+        message: "ID événement invalide",
       });
     }
 
-    const event =
-      await Event.findOne({
-        _id: id,
-        church: req.churchId,
-      });
+    const event = await Event.findOne({
+      _id: id,
+      church: req.churchId,
+    });
 
     if (!event) {
       return res.status(404).json({
         success: false,
-        message:
-          "Événement introuvable",
+        message: "Événement introuvable",
       });
     }
 
-    const eventTitle =
-      event.title;
+    if (event.attendanceClosed) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Impossible de supprimer un événement dont les pointages sont clôturés.",
+      });
+    }
+
+    const eventTitle = event.title;
 
     await event.deleteOne();
 
@@ -635,12 +471,203 @@ const deleteEvent = async (
 
     return res.status(200).json({
       success: true,
-      message:
-        "Événement supprimé avec succès",
+      message: "Événement supprimé avec succès",
+    });
+  } catch (error) {
+    console.error("Erreur deleteEvent :", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// ======================================================
+// CLÔTURER LES POINTAGES
+// ======================================================
+
+const closeEventAttendance = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID événement invalide",
+      });
+    }
+
+    const event = await Event.findOne({
+      _id: id,
+      church: req.churchId,
+    });
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Événement introuvable",
+      });
+    }
+
+    if (event.attendanceClosed) {
+      return res.status(409).json({
+        success: false,
+        message: "Pointages déjà clôturés",
+      });
+    }
+
+    if (
+      !["Terminé", "completed"].includes(event.status)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Le culte doit être terminé avant clôture.",
+      });
+    }
+
+    if (req.body?.confirmComplete !== true) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Confirme la complétude des pointages avec confirmComplete: true.",
+      });
+    }
+
+    const closed = await Event.findOneAndUpdate(
+      {
+        _id: id,
+        church: req.churchId,
+        attendanceClosed: { $ne: true },
+        status: {
+          $in: ["Terminé", "completed"],
+        },
+      },
+      {
+        $set: {
+          attendanceClosed: true,
+          attendanceClosedAt: new Date(),
+          attendanceClosedBy:
+            req.user?._id || null,
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!closed) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "État de l'événement modifié entre-temps.",
+      });
+    }
+
+    await createActivityLog({
+      req,
+      action: "UPDATE",
+      entity: "Event",
+      entityId: closed._id,
+      description:
+        `Clôture des pointages : ${closed.title}`,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Pointages clôturés",
+      data: closed,
     });
   } catch (error) {
     console.error(
-      "Erreur deleteEvent :",
+      "Erreur closeEventAttendance :",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// ======================================================
+// RÉOUVRIR LES POINTAGES
+// ======================================================
+
+const reopenEventAttendance = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID événement invalide",
+      });
+    }
+
+    const reason =
+      typeof req.body?.reason === "string"
+        ? req.body.reason.trim()
+        : "";
+
+    if (reason.length < 5) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Motif de réouverture requis (5 caractères minimum).",
+      });
+    }
+
+    const event = await Event.findOneAndUpdate(
+      {
+        _id: id,
+        church: req.churchId,
+        attendanceClosed: true,
+      },
+      {
+        $set: {
+          attendanceClosed: false,
+          attendanceClosedAt: null,
+          attendanceClosedBy: null,
+        },
+        $inc: {
+          attendanceRevision: 1,
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!event) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Événement introuvable ou pointages non clôturés.",
+      });
+    }
+
+    await createActivityLog({
+      req,
+      action: "UPDATE",
+      entity: "Event",
+      entityId: event._id,
+      description:
+        `Réouverture des pointages : ${event.title} — ${reason}`,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Pointages rouverts",
+      data: event,
+    });
+  } catch (error) {
+    console.error(
+      "Erreur reopenEventAttendance :",
       error
     );
 
@@ -661,4 +688,6 @@ module.exports = {
   getEventById,
   updateEvent,
   deleteEvent,
+  closeEventAttendance,
+  reopenEventAttendance,
 };

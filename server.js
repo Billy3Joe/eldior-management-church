@@ -1,3 +1,11 @@
+
+/**
+ * ======================================================
+ * ELDIOR MANAGEMENT CHURCH
+ * SERVEUR PRINCIPAL BACKEND
+ * ======================================================
+ */
+
 // ======================================================
 // VARIABLES D'ENVIRONNEMENT
 // IMPORTANT : dotenv doit être chargé en premier
@@ -42,6 +50,15 @@ const startAssignmentReminderJob = require(
 );
 
 // ======================================================
+// SCHEDULER DES ALERTES PASTORALES
+// ======================================================
+
+const {
+  startPastoralAlertScheduler,
+  stopPastoralAlertScheduler,
+} = require("./jobs/pastoralAlertScheduler");
+
+// ======================================================
 // APPLICATION EXPRESS
 // ======================================================
 
@@ -73,7 +90,8 @@ app.use(
 app.get("/", (req, res) => {
   return res.status(200).json({
     success: true,
-    message: "API ElDior Management Church opérationnelle",
+    message:
+      "API ElDior Management Church opérationnelle",
   });
 });
 
@@ -304,7 +322,8 @@ app.use(
 app.use((req, res) => {
   return res.status(404).json({
     success: false,
-    message: `Route API introuvable : ${req.method} ${req.originalUrl}`,
+    message:
+      `Route API introuvable : ${req.method} ${req.originalUrl}`,
   });
 });
 
@@ -348,11 +367,19 @@ const PORT =
 
 const startServer = async () => {
   try {
+    // --------------------------------------------------
+    // 1. CONNEXION MONGODB
+    // --------------------------------------------------
+
     await connectDB();
 
     console.log(
       "✅ Connexion MongoDB établie"
     );
+
+    // --------------------------------------------------
+    // 2. DÉMARRAGE HTTP
+    // --------------------------------------------------
 
     const server = app.listen(
       PORT,
@@ -365,6 +392,10 @@ const startServer = async () => {
           `🌐 API : http://localhost:${PORT}`
         );
 
+        // ----------------------------------------------
+        // 3. SCHEDULER DES RAPPELS
+        // ----------------------------------------------
+
         try {
           startAssignmentReminderJob();
 
@@ -373,18 +404,76 @@ const startServer = async () => {
           );
         } catch (error) {
           console.error(
-            "❌ Erreur lancement scheduler :",
+            "❌ Erreur lancement scheduler des rappels :",
             error
+          );
+        }
+
+        // ----------------------------------------------
+        // 4. SCHEDULER DES ALERTES PASTORALES
+        // ----------------------------------------------
+
+        if (
+          process.env.PASTORAL_SCHEDULER_ENABLED ===
+          "true"
+        ) {
+          try {
+            startPastoralAlertScheduler();
+
+            console.log(
+              "⏰ Initialisation du scheduler pastoral effectuée"
+            );
+          } catch (error) {
+            console.error(
+              "❌ Erreur lancement scheduler pastoral :",
+              error
+            );
+          }
+        } else {
+          console.log(
+            "ℹ️ Scheduler pastoral désactivé par configuration"
           );
         }
       }
     );
 
+    // --------------------------------------------------
+    // 5. ARRÊT PROPRE DU SERVEUR
+    // --------------------------------------------------
+
+    let shuttingDown = false;
+
     const shutdown = (signal) => {
+      if (shuttingDown) {
+        return;
+      }
+
+      shuttingDown = true;
+
       console.log(
         `\n🛑 Signal ${signal} reçu`
       );
 
+      // Arrêt du scheduler pastoral
+      try {
+        if (
+          typeof stopPastoralAlertScheduler ===
+          "function"
+        ) {
+          stopPastoralAlertScheduler();
+
+          console.log(
+            "⏹️ Scheduler pastoral arrêté"
+          );
+        }
+      } catch (error) {
+        console.error(
+          "❌ Erreur arrêt scheduler pastoral :",
+          error
+        );
+      }
+
+      // Arrêt HTTP
       server.close(() => {
         console.log(
           "✅ Serveur HTTP arrêté"
