@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 const FinanceAccount = require("../models/FinanceAccount");
@@ -46,43 +47,58 @@ const getMonthRange = (year, month) => {
 
 const normalizePeriod = (req) => {
   const now = new Date();
+  const rawYear = req.query.year;
+  const rawMonth = req.query.month;
+  const year = rawYear === undefined ? now.getUTCFullYear() : Number(rawYear);
+  const month = rawMonth === undefined ? now.getUTCMonth() + 1 : Number(rawMonth);
+  const mode = String(req.query.period || "month").toLowerCase();
 
-  const year =
-    Number.parseInt(req.query.year, 10) ||
-    now.getUTCFullYear();
-
-  const month =
-    Number.parseInt(req.query.month, 10) ||
-    now.getUTCMonth() + 1;
-
-  if (
-    !Number.isInteger(year) ||
-    year < 2000 ||
-    year > 2200
-  ) {
-    return {
-      success: false,
-      message: "Année financière invalide.",
-    };
+  if (!Number.isInteger(year) || year < 2000 || year > 2200) {
+    return { success: false, message: "Année financière invalide." };
+  }
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return { success: false, message: "Mois financier invalide." };
   }
 
-  if (
-    !Number.isInteger(month) ||
-    month < 1 ||
-    month > 12
-  ) {
-    return {
-      success: false,
-      message: "Mois financier invalide.",
-    };
-  }
-
-  return {
-    success: true,
-    year,
-    month,
-    ...getMonthRange(year, month),
+  const parseISO = (value) => {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : null;
   };
+  const dayEnd = (date) => new Date(date.getTime() + 86400000 - 1);
+  let startDate;
+  let endDate;
+
+  if (mode === "month") {
+    ({ startDate, endDate } = getMonthRange(year, month));
+  } else if (mode === "week") {
+    const anchor = new Date(Date.UTC(year, month - 1, 15));
+    const mondayOffset = (anchor.getUTCDay() + 6) % 7;
+    startDate = new Date(anchor.getTime() - mondayOffset * 86400000);
+    endDate = dayEnd(new Date(startDate.getTime() + 6 * 86400000));
+  } else if (mode === "quarter") {
+    const firstMonth = Math.floor((month - 1) / 3) * 3;
+    startDate = new Date(Date.UTC(year, firstMonth, 1));
+    endDate = new Date(Date.UTC(year, firstMonth + 3, 1) - 1);
+  } else if (mode === "year") {
+    startDate = new Date(Date.UTC(year, 0, 1));
+    endDate = new Date(Date.UTC(year + 1, 0, 1) - 1);
+  } else if (mode === "custom") {
+    const start = parseISO(req.query.startDate);
+    const end = parseISO(req.query.endDate);
+    if (!start || !end || start > end) {
+      return { success: false, message: "Dates personnalisées invalides." };
+    }
+    startDate = start;
+    endDate = dayEnd(end);
+  } else if (mode === "all") {
+    startDate = new Date(Date.UTC(1900, 0, 1));
+    endDate = new Date(Date.UTC(9999, 11, 31, 23, 59, 59, 999));
+  } else {
+    return { success: false, message: "Période financière inconnue." };
+  }
+
+  return { success: true, year, month, mode, startDate, endDate };
 };
 
 const normalizeText = (value) =>
@@ -129,6 +145,7 @@ const getFinanceDashboard = async (req, res) => {
     const {
       year,
       month,
+      mode,
       startDate,
       endDate,
     } = period;
@@ -496,9 +513,9 @@ const getFinanceDashboard = async (req, res) => {
         transaction.transactionDate
       );
 
-      const day = String(
-        date.getUTCDate()
-      ).padStart(2, "0");
+      const day = mode === "month"
+        ? String(date.getUTCDate()).padStart(2, "0")
+        : date.toISOString().slice(0, 10);
 
       const currency =
         normalizeCurrency(
@@ -557,8 +574,7 @@ const getFinanceDashboard = async (req, res) => {
           }
 
           return (
-            Number(a.day) -
-            Number(b.day)
+            String(a.day).localeCompare(String(b.day))
           );
         }
       );
@@ -931,6 +947,7 @@ const getFinanceDashboard = async (req, res) => {
         period: {
           year,
           month,
+          mode,
           startDate,
           endDate,
         },
